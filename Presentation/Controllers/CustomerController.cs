@@ -4,8 +4,13 @@ using Sales.API.Application.Interfaces;
 
 namespace Sales.API.Presentation.Controllers;
 
+/// <summary>
+/// Endpoint INTERNO de administración. NO es parte del contrato público.
+/// Los clientes NO están en el scope actual del contrato.
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class CustomerController : ControllerBase
 {
     private readonly IBusinessService _businessService;
