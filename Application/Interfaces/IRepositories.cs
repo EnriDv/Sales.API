@@ -15,6 +15,8 @@ public interface IGenericRepository<T> where T : class
 public interface ITicketRepository
 {
     Task<Ticket?> GetTicketWithDetailsAsync(int companyId, int ticketId);
+    Task<Ticket?> GetTicketByCenAsync(int companyId, string ticketCen);
+    Task<List<Ticket>> GetAllTicketsAsync(int companyId, string? status = null);
     Task<List<Ticket>> GetActiveTicketsAsync(int companyId, int locationId);
     Task<List<Ticket>> GetTicketHistoryAsync(int companyId, int locationId, int take);
 }

@@ -6,6 +6,7 @@ namespace Sales.API.Presentation.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[ApiExplorerSettings(IgnoreApi = true)]
 public class VendorController : ControllerBase
 {
     private readonly IBusinessService _businessService;

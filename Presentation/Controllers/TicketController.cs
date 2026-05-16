@@ -4,8 +4,12 @@ using Sales.API.Application.Interfaces;
 
 namespace Sales.API.Presentation.Controllers;
 
+/// <summary>
+/// VentasTicketsContract — Parte del contrato público v1
+/// Base: /api/sales/companies/{companyCen}
+/// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/sales/companies/{companyCen}/tickets")]
 public class TicketController : ControllerBase
 {
     private readonly ITicketService _ticketService;
@@ -15,42 +19,69 @@ public class TicketController : ControllerBase
         _ticketService = ticketService;
     }
 
-    [HttpGet("company/{companyId}/location/{locationId}/active")]
-    public async Task<IActionResult> GetActiveTickets(int companyId, int locationId) => 
-        Ok(await _ticketService.GetActiveTicketsAsync(companyId, locationId));
+    [HttpGet]
+    public async Task<IActionResult> GetTickets(string companyCen, [FromQuery] string? status = null) =>
+        Ok(await _ticketService.GetTicketsAsync(companyCen, status));
 
-    [HttpGet("company/{companyId}/location/{locationId}/history")]
-    public async Task<IActionResult> GetTicketHistory(int companyId, int locationId, [FromQuery] int take = 100) =>
-        Ok(await _ticketService.GetTicketHistoryAsync(companyId, locationId, take));
+    [HttpGet("{ticketCen}")]
+    public async Task<IActionResult> GetTicket(string companyCen, string ticketCen) =>
+        Ok(await _ticketService.GetTicketAsync(companyCen, ticketCen));
 
-    [HttpGet("company/{companyId}/{ticketId}")]
-    public async Task<IActionResult> GetTicket(int companyId, int ticketId) => 
-        Ok(await _ticketService.GetTicketAsync(companyId, ticketId));
-
-    [HttpPost("company/{companyId}")]
-    public async Task<IActionResult> CreateTicket(int companyId, [FromBody] CreateTicketRequest request) => 
-        Ok(await _ticketService.CreateTicketAsync(companyId, request));
-
-    [HttpPost("company/{companyId}/{ticketId}/items")]
-    public async Task<IActionResult> AddTicketItem(int companyId, int ticketId, [FromBody] AddTicketItemRequest request) => 
-        Ok(await _ticketService.AddItemAsync(companyId, ticketId, request));
-
-    [HttpPatch("company/{companyId}/{ticketId}/items/{itemId}/status")]
-    public async Task<IActionResult> UpdateTicketItemStatus(int companyId, int ticketId, int itemId, [FromBody] UpdateTicketItemStatusRequest request) =>
-        Ok(await _ticketService.UpdateItemStatusAsync(companyId, ticketId, itemId, request));
-
-    [HttpPatch("company/{companyId}/{ticketId}/item/{itemId}/status")]
-    public async Task<IActionResult> UpdateTicketItemStatusCompat(int companyId, int ticketId, int itemId, [FromBody] UpdateTicketItemStatusRequest request) =>
-        Ok(await _ticketService.UpdateItemStatusAsync(companyId, ticketId, itemId, request));
-
-    [HttpPost("company/{companyId}/{ticketId}/checkout")]
-    public async Task<IActionResult> Checkout(int companyId, int ticketId, [FromBody] CheckoutRequest request) => 
-        Ok(await _ticketService.CheckoutAsync(companyId, ticketId, request));
-
-    [HttpDelete("company/{companyId}/{ticketId}")]
-    public async Task<IActionResult> CancelTicket(int companyId, int ticketId)
+    [HttpPost]
+    public async Task<IActionResult> CreateTicket(string companyCen, [FromBody] CreateTicketContractRequest request)
     {
-        await _ticketService.CancelTicketAsync(companyId, ticketId);
-        return NoContent();
+        var result = await _ticketService.CreateTicketAsync(companyCen, request);
+        return CreatedAtAction(nameof(GetTicket), new { companyCen, ticketCen = result.TicketCen }, result);
+    }
+
+    [HttpGet("{ticketCen}/totals")]
+    public async Task<IActionResult> GetTicketTotals(string companyCen, string ticketCen) =>
+        Ok(await _ticketService.GetTicketTotalsAsync(companyCen, ticketCen));
+
+    [HttpPut("{ticketCen}/waiter")]
+    public async Task<IActionResult> AssignWaiter(string companyCen, string ticketCen, [FromBody] AssignWaiterContractRequest request) =>
+        Ok(await _ticketService.AssignWaiterAsync(companyCen, ticketCen, request));
+
+    [HttpPost("{ticketCen}/send")]
+    public async Task<IActionResult> SendToKitchen(string companyCen, string ticketCen)
+    {
+        await _ticketService.SendToKitchenAsync(companyCen, ticketCen);
+        return Ok(new { message = "Ticket enviado a cocina exitosamente." });
+    }
+
+    [HttpPost("{ticketCen}/payment")]
+    public async Task<IActionResult> PayTicket(string companyCen, string ticketCen, [FromBody] PayTicketContractRequest request) =>
+        Ok(await _ticketService.PayTicketAsync(companyCen, ticketCen, request));
+
+    [HttpPost("{ticketCen}/cancel")]
+    public async Task<IActionResult> CancelTicket(string companyCen, string ticketCen, [FromBody] CancelTicketContractRequest? request = null) =>
+        Ok(await _ticketService.CancelTicketAsync(companyCen, ticketCen, request));
+
+    [HttpPost("{ticketCen}/print")]
+    public async Task<IActionResult> PrintTicket(string companyCen, string ticketCen)
+    {
+        await _ticketService.PrintTicketAsync(companyCen, ticketCen);
+        return Ok(new { message = "Ticket enviado a impresión exitosamente." });
+    }
+
+    // ── ITEMS ───────────────────────────────────────
+
+    [HttpGet("{ticketCen}/items")]
+    public async Task<IActionResult> GetTicketItems(string companyCen, string ticketCen) =>
+        Ok(await _ticketService.GetTicketItemsAsync(companyCen, ticketCen));
+
+    [HttpPost("{ticketCen}/items")]
+    public async Task<IActionResult> AddTicketItem(string companyCen, string ticketCen, [FromBody] AddTicketItemContractRequest request) =>
+        Ok(await _ticketService.AddItemAsync(companyCen, ticketCen, request));
+
+    [HttpPatch("{ticketCen}/items/{ticketItemCen}")]
+    public async Task<IActionResult> UpdateTicketItem(string companyCen, string ticketCen, string ticketItemCen, [FromBody] UpdateTicketItemContractRequest request) =>
+        Ok(await _ticketService.UpdateItemAsync(companyCen, ticketCen, ticketItemCen, request));
+
+    [HttpPost("{ticketCen}/items/{ticketItemCen}/resend")]
+    public async Task<IActionResult> ResendTicketItem(string companyCen, string ticketCen, string ticketItemCen)
+    {
+        await _ticketService.ResendItemAsync(companyCen, ticketCen, ticketItemCen);
+        return Ok(new { message = "Item reenviado exitosamente." });
     }
 }

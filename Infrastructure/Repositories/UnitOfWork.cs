@@ -14,8 +14,32 @@ public class TicketRepository : ITicketRepository
     {
         return await _ctx.Tickets
             .Include(t => t.Items).ThenInclude(i => i.Product)
+            .Include(t => t.Vendor)
             .Include(t => t.Payments)
             .FirstOrDefaultAsync(t => t.CompanyId == companyId && t.Id == ticketId);
+    }
+
+    public async Task<Ticket?> GetTicketByCenAsync(int companyId, string ticketCen)
+    {
+        return await _ctx.Tickets
+            .Include(t => t.Items).ThenInclude(i => i.Product)
+            .Include(t => t.Vendor)
+            .Include(t => t.Payments)
+            .FirstOrDefaultAsync(t => t.CompanyId == companyId && t.TicketNumber == ticketCen);
+    }
+
+    public async Task<List<Ticket>> GetAllTicketsAsync(int companyId, string? status = null)
+    {
+        var query = _ctx.Tickets
+            .Include(t => t.Items).ThenInclude(i => i.Product)
+            .Include(t => t.Vendor)
+            .Include(t => t.Payments)
+            .Where(t => t.CompanyId == companyId);
+
+        if (status != null)
+            query = query.Where(t => t.Status == status);
+
+        return await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
     }
 
     public async Task<List<Ticket>> GetActiveTicketsAsync(int companyId, int locationId)

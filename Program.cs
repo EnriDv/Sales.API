@@ -19,6 +19,12 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IKdsService, KdsService>();
+builder.Services.AddScoped<ISalesDashboardService, SalesDashboardService>();
+builder.Services.AddScoped<ITaxConfigurationService, TaxConfigurationService>();
+builder.Services.AddScoped<IPaymentMethodService, PaymentMethodService>();
+builder.Services.AddScoped<IWaiterService, WaiterService>();
+builder.Services.AddScoped<ISalesCatalogService, SalesCatalogService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>

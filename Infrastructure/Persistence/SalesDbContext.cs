@@ -12,7 +12,10 @@ public class SalesDbContext : DbContext
     // Entidades de Lectura (Esquema Inventory)
     public DbSet<Company> Companies { get; set; }
     public DbSet<Location> Locations { get; set; }
+    public DbSet<Category> Categories { get; set; }
     public DbSet<Product> Products { get; set; }
+    public DbSet<ProductStock> ProductStocks { get; set; }
+    public DbSet<WarehouseRef> Warehouses { get; set; }
 
     // Entidades Propias (Esquema Sales)
     public DbSet<SalesSetting> SalesSettings { get; set; }
@@ -43,6 +46,17 @@ public class SalesDbContext : DbContext
             entity.Property(e => e.Name).HasColumnName("name");
         });
 
+        modelBuilder.Entity<Category>(entity =>
+        {
+            entity.ToTable("categories", "inventory");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.CompanyId).HasColumnName("company_id");
+            entity.Property(e => e.Code).HasColumnName("code");
+            entity.Property(e => e.Name).HasColumnName("name");
+            entity.Property(e => e.Active).HasColumnName("active");
+        });
+
         modelBuilder.Entity<Product>(entity =>
         {
             entity.ToTable("products", "inventory");
@@ -52,8 +66,36 @@ public class SalesDbContext : DbContext
             entity.Property(e => e.Code).HasColumnName("code");
             entity.Property(e => e.Sku).HasColumnName("sku");
             entity.Property(e => e.Name).HasColumnName("name");
+            entity.Property(e => e.Description).HasColumnName("description");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.Price).HasColumnName("price");
+            entity.Property(e => e.IsOutOfStock).HasColumnName("is_out_of_stock");
             entity.Property(e => e.Active).HasColumnName("active");
+            entity.Property(e => e.StationCode).HasColumnName("station_code");
+
+            entity.HasOne(d => d.Category).WithMany().HasForeignKey(d => d.CategoryId);
+        });
+
+        modelBuilder.Entity<WarehouseRef>(entity =>
+        {
+            entity.ToTable("warehouses", "inventory");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
+            entity.Property(e => e.Code).HasColumnName("code");
+        });
+
+        modelBuilder.Entity<ProductStock>(entity =>
+        {
+            entity.ToTable("stocks", "inventory");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.CompanyId).HasColumnName("company_id");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
+            entity.Property(e => e.Quantity).HasColumnName("quantity");
+
+            entity.HasOne(d => d.Product).WithMany(p => p.Stocks).HasForeignKey(d => d.ProductId);
+            entity.HasOne(d => d.Warehouse).WithMany().HasForeignKey(d => d.WarehouseId);
         });
 
         // --- MAPEO INTERNO (SALES) ---

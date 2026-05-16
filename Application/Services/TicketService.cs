@@ -7,59 +7,95 @@ namespace Sales.API.Application.Services;
 
 public class TicketService : ITicketService
 {
-    private static readonly HashSet<string> AllowedTicketItemStatuses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "PENDING",
-        "IN_COMMAND",
-        "SERVED",
-        "CANCELLED",
-    };
-
     private readonly IUnitOfWork _uow;
 
-    public TicketService(IUnitOfWork uow)
+    public TicketService(IUnitOfWork uow) => _uow = uow;
+
+    // ── Helpers ──────────────────────────────────
+    private async Task<int> ResolveCompanyIdAsync(string companyCen)
     {
-        _uow = uow;
+        if (!int.TryParse(companyCen, out var id))
+            throw new ValidationException($"CEN de empresa inválido: {companyCen}");
+        var company = await _uow.Companies.GetByIdAsync(id);
+        if (company == null)
+            throw new NotFoundException($"Empresa no encontrada: {companyCen}");
+        return id;
     }
 
-    public async Task<List<TicketResponse>> GetActiveTicketsAsync(int companyId, int locationId)
+    private async Task<Ticket> ResolveTicketAsync(int companyId, string ticketCen)
     {
-        var tickets = await _uow.TicketQueries.GetActiveTicketsAsync(companyId, locationId);
-        return tickets.Select(MapToResponse).ToList();
+        var tickets = await _uow.TicketQueries.GetTicketByCenAsync(companyId, ticketCen);
+        return tickets ?? throw new NotFoundException($"Ticket no encontrado: {ticketCen}");
     }
 
-    public async Task<List<TicketResponse>> GetTicketHistoryAsync(int companyId, int locationId, int take = 100)
+    private async Task<int> GetDefaultLocationIdAsync(int companyId)
     {
-        var tickets = await _uow.TicketQueries.GetTicketHistoryAsync(companyId, locationId, take);
-        return tickets.Select(MapToResponse).ToList();
+        var locs = await _uow.Locations.GetAllAsync(l => l.CompanyId == companyId);
+        return locs.FirstOrDefault()?.Id
+            ?? throw new DomainException("No hay ubicaciones configuradas para la empresa.");
     }
 
-    public async Task<TicketResponse> GetTicketAsync(int companyId, int ticketId)
+    // ── LIST ─────────────────────────────────────
+    public async Task<List<TicketContractResponse>> GetTicketsAsync(string companyCen, string? status = null)
     {
-        var ticket = await _uow.TicketQueries.GetTicketWithDetailsAsync(companyId, ticketId);
-        if (ticket == null) throw new NotFoundException("Ticket no encontrado.");
-        return MapToResponse(ticket);
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var tickets = await _uow.TicketQueries.GetAllTicketsAsync(companyId, status);
+        return tickets.Select(MapToContractResponse).ToList();
     }
 
-    public async Task<TicketResponse> CreateTicketAsync(int companyId, CreateTicketRequest request)
+    // ── SINGLE ────────────────────────────────────
+    public async Task<TicketContractResponse> GetTicketAsync(string companyCen, string ticketCen)
     {
-        if (request.LocationId <= 0)
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        return MapToContractResponse(ticket);
+    }
+
+    public async Task<TicketTotalsContractResponse> GetTicketTotalsAsync(string companyCen, string ticketCen)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        var amounts = CalculateTicketAmounts(ticket.Items, ticket.TaxRate);
+
+        return new TicketTotalsContractResponse
         {
-            throw new DomainException("Error: El LocationId es 0 o inválido. Revisa los datos enviados.");
-        }
+            TicketCen = ticket.TicketNumber,
+            Subtotal = amounts.Subtotal,
+            TaxRate = ticket.TaxRate,
+            TaxAmount = amounts.TaxAmount,
+            TotalAmount = amounts.TotalAmount,
+            ItemCount = ticket.Items.Count(i => !string.Equals(i.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase)),
+            Status = ticket.Status
+        };
+    }
+
+    // ── CREATE ────────────────────────────────────
+    public async Task<TicketContractResponse> CreateTicketAsync(string companyCen, CreateTicketContractRequest request)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var locationId = await GetDefaultLocationIdAsync(companyId);
 
         var settingsList = await _uow.SalesSettings.GetAllAsync(s => s.CompanyId == companyId);
-        var settings = settingsList.FirstOrDefault();
-        decimal defaultTaxRate = settings?.TaxRate ?? 0;
+        decimal defaultTaxRate = settingsList.FirstOrDefault()?.TaxRate ?? 0;
+
+        // Resolve waiter by CEN
+        int? vendorId = null;
+        if (!string.IsNullOrWhiteSpace(request.WaiterCen))
+        {
+            if (int.TryParse(request.WaiterCen, out var vId))
+            {
+                var vendor = await _uow.Vendors.GetByIdAsync(vId);
+                if (vendor?.CompanyId == companyId) vendorId = vId;
+            }
+        }
 
         var ticket = new Ticket
         {
             CompanyId = companyId,
-            LocationId = request.LocationId,
+            LocationId = locationId,
             TicketNumber = BuildTicketNumber(),
-            VendorId = request.VendorId,
-            CustomerId = request.CustomerId,
-            ServiceType = request.ServiceType,
+            VendorId = vendorId,
+            ServiceType = request.ServiceType ?? "DINE_IN",
             TableCode = request.TableCode,
             Status = "OPEN",
             Subtotal = 0,
@@ -75,84 +111,77 @@ public class TicketService : ITicketService
         await _uow.Tickets.AddAsync(ticket);
         await _uow.SaveAsync();
 
-        return await GetTicketAsync(companyId, ticket.Id);
+        return await GetTicketAsync(companyCen, ticket.TicketNumber);
     }
 
-    public async Task<TicketResponse> AddItemAsync(int companyId, int ticketId, AddTicketItemRequest request)
+    // ── ASSIGN WAITER ─────────────────────────────
+    public async Task<AssignTicketWaiterContractResponse> AssignWaiterAsync(string companyCen, string ticketCen, AssignWaiterContractRequest request)
     {
-        if (request.ProductId <= 0)
-        {
-            throw new DomainException("Error: El ProductId es 0 o inválido.");
-        }
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        if (ticket.Status != "OPEN") throw new DomainException("Solo se puede asignar mesero a un ticket abierto.");
 
-        var ticket = await _uow.TicketQueries.GetTicketWithDetailsAsync(companyId, ticketId);
-        if (ticket == null) throw new NotFoundException("Ticket no encontrado.");
-        if (ticket.Status != "OPEN") throw new DomainException("El ticket ya está pagado o cancelado.");
+        if (!int.TryParse(request.WaiterCen, out var vendorId))
+            throw new ValidationException($"CEN de mesero inválido: {request.WaiterCen}");
 
-        var product = await _uow.Products.GetByIdAsync(request.ProductId);
-        if (product == null || product.CompanyId != companyId) throw new NotFoundException("Producto no encontrado.");
+        var vendor = await _uow.Vendors.GetByIdAsync(vendorId);
+        if (vendor == null || vendor.CompanyId != companyId || !vendor.IsWaiter)
+            throw new NotFoundException($"Mesero no encontrado: {request.WaiterCen}");
 
-        decimal unitPrice = request.UnitPrice > 0 ? request.UnitPrice : product.Price;
-
-        var item = new TicketItem
-        {
-            TicketId = ticketId,
-            ProductId = request.ProductId,
-            Quantity = request.Quantity > 0 ? request.Quantity : 1,
-            UnitPrice = unitPrice,
-            Status = "PENDING",
-            Notes = request.Notes,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        await _uow.TicketItems.AddAsync(item);
-        await _uow.SaveAsync();
-
-        return await GetTicketAsync(companyId, ticketId);
-    }
-
-    public async Task<TicketResponse> UpdateItemStatusAsync(int companyId, int ticketId, int itemId, UpdateTicketItemStatusRequest request)
-    {
-        var ticket = await _uow.TicketQueries.GetTicketWithDetailsAsync(companyId, ticketId);
-        if (ticket == null) throw new NotFoundException("Ticket no encontrado.");
-        if (!string.Equals(ticket.Status, "OPEN", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new DomainException("Solo puedes actualizar items en tickets abiertos.");
-        }
-
-        var item = ticket.Items.FirstOrDefault(i => i.Id == itemId);
-        if (item == null) throw new NotFoundException("Item del ticket no encontrado.");
-
-        item.Status = NormalizeItemStatus(request.Status);
-        item.UpdatedAt = DateTime.UtcNow;
+        ticket.VendorId = vendorId;
         ticket.UpdatedAt = DateTime.UtcNow;
-
-        _uow.TicketItems.Update(item);
         _uow.Tickets.Update(ticket);
         await _uow.SaveAsync();
 
-        return await GetTicketAsync(companyId, ticketId);
+        return new AssignTicketWaiterContractResponse
+        {
+            TicketCen = ticket.TicketNumber,
+            WaiterCen = vendor.Id.ToString(),
+            WaiterName = vendor.Name
+        };
     }
 
-    public async Task<TicketResponse> CheckoutAsync(int companyId, int ticketId, CheckoutRequest request)
+    // ── SEND TO KITCHEN ────────────────────────────
+    public async Task SendToKitchenAsync(string companyCen, string ticketCen)
     {
-        var ticket = await _uow.TicketQueries.GetTicketWithDetailsAsync(companyId, ticketId);
-        if (ticket == null) throw new NotFoundException("Ticket no encontrado.");
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        if (ticket.Status != "OPEN") throw new DomainException("El ticket no está abierto.");
+        if (!ticket.Items.Any(i => i.Status == "PENDING"))
+            throw new DomainException("No hay items pendientes por enviar.");
+
+        foreach (var item in ticket.Items.Where(i => i.Status == "PENDING"))
+        {
+            item.Status = "IN_COMMAND";
+            item.UpdatedAt = DateTime.UtcNow;
+            _uow.TicketItems.Update(item);
+        }
+        ticket.UpdatedAt = DateTime.UtcNow;
+        _uow.Tickets.Update(ticket);
+        await _uow.SaveAsync();
+    }
+
+    // ── PAY TICKET ────────────────────────────────
+    public async Task<PayTicketContractResponse> PayTicketAsync(string companyCen, string ticketCen, PayTicketContractRequest request)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
         if (ticket.Status != "OPEN") throw new DomainException("El ticket no está abierto para cobro.");
-        if (!ticket.Items.Any()) throw new DomainException("No se puede cobrar un ticket vacío.");
+        if (!ticket.Items.Any(i => i.Status != "CANCELLED")) throw new DomainException("No se puede cobrar un ticket sin items.");
 
-        var calculatedAmounts = CalculateTicketAmounts(ticket.Items, ticket.TaxRate);
-        ticket.Subtotal = calculatedAmounts.Subtotal;
-        ticket.TaxAmount = calculatedAmounts.TaxAmount;
-        ticket.TotalAmount = calculatedAmounts.TotalAmount;
+        var amounts = CalculateTicketAmounts(ticket.Items, ticket.TaxRate);
+        ticket.Subtotal = amounts.Subtotal;
+        ticket.TaxAmount = amounts.TaxAmount;
+        ticket.TotalAmount = amounts.TotalAmount;
 
-        decimal amountToPay = request.Amount > 0 ? request.Amount : ticket.TotalAmount;
+        decimal amountToPay = request.Amount.HasValue && request.Amount.Value > 0
+            ? request.Amount.Value
+            : ticket.TotalAmount;
 
         var payment = new Payment
         {
-            TicketId = ticketId,
-            PaymentMethod = request.PaymentMethod,
+            TicketId = ticket.Id,
+            PaymentMethod = request.PaymentMethodCen,
             Amount = amountToPay,
             Reference = request.Reference,
             PaidBy = request.PaidBy,
@@ -168,21 +197,28 @@ public class TicketService : ITicketService
         _uow.Tickets.Update(ticket);
         await _uow.SaveAsync();
 
-        return await GetTicketAsync(companyId, ticketId);
+        return new PayTicketContractResponse
+        {
+            TicketCen = ticket.TicketNumber,
+            Status = "PAID",
+            TotalAmount = amountToPay,
+            PaymentMethod = request.PaymentMethodCen,
+            PaidAt = DateTime.UtcNow
+        };
     }
 
-    public async Task CancelTicketAsync(int companyId, int ticketId)
+    // ── CANCEL TICKET ─────────────────────────────
+    public async Task<CancelTicketContractResponse> CancelTicketAsync(string companyCen, string ticketCen, CancelTicketContractRequest? request = null)
     {
-        var ticket = await _uow.TicketQueries.GetTicketWithDetailsAsync(companyId, ticketId);
-        if (ticket == null) throw new NotFoundException("Ticket no encontrado.");
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
         if (ticket.Status == "PAID") throw new DomainException("No se puede cancelar un ticket pagado.");
 
         ticket.Status = "CANCELLED";
         ticket.CancelledAt = DateTime.UtcNow;
-        ticket.Subtotal = 0;
-        ticket.TaxAmount = 0;
-        ticket.TotalAmount = 0;
         ticket.UpdatedAt = DateTime.UtcNow;
+        if (request?.Reason != null)
+            ticket.Notes = string.IsNullOrEmpty(ticket.Notes) ? request.Reason : $"{ticket.Notes} | Cancel: {request.Reason}";
 
         foreach (var item in ticket.Items)
         {
@@ -193,81 +229,151 @@ public class TicketService : ITicketService
 
         _uow.Tickets.Update(ticket);
         await _uow.SaveAsync();
-    }
 
-    private static string BuildTicketNumber()
-    {
-        // Incluye milisegundos y sufijo aleatorio para evitar colisiones por concurrencia.
-        return $"T-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
-    }
-
-    private static string NormalizeItemStatus(string? status)
-    {
-        var normalized = string.IsNullOrWhiteSpace(status) ? string.Empty : status.Trim().ToUpperInvariant();
-        if (!AllowedTicketItemStatuses.Contains(normalized))
+        return new CancelTicketContractResponse
         {
-            throw new DomainException("Estado de item de ticket inválido.");
-        }
-
-        return normalized;
-    }
-
-    private static TicketResponse MapToResponse(Ticket t)
-    {
-        var calculatedAmounts = CalculateTicketAmounts(t.Items, t.TaxRate);
-
-        return new TicketResponse
-        {
-            Id = t.Id,
-            TicketNumber = t.TicketNumber,
-            ServiceType = t.ServiceType,
-            TableCode = t.TableCode,
-            Status = t.Status,
-            Subtotal = calculatedAmounts.Subtotal,
-            TaxRate = t.TaxRate,
-            TaxAmount = calculatedAmounts.TaxAmount,
-            TotalAmount = calculatedAmounts.TotalAmount,
-            CreatedAt = t.CreatedAt,
-            PaidAt = t.PaidAt,
-            CancelledAt = t.CancelledAt,
-            Items = t.Items.Select(i => new TicketItemResponse
-            {
-                Id = i.Id,
-                ProductId = i.ProductId,
-                ProductName = i.Product?.Name ?? "Producto",
-                Quantity = i.Quantity,
-                UnitPrice = i.UnitPrice,
-                Subtotal = i.Subtotal,
-                Status = i.Status,
-                Notes = i.Notes
-            }).ToList(),
-            Payments = t.Payments.Select(p => new PaymentResponse
-            {
-                Id = p.Id,
-                PaymentMethod = p.PaymentMethod,
-                Amount = p.Amount,
-                CreatedAt = p.CreatedAt
-            }).ToList()
+            TicketCen = ticket.TicketNumber,
+            Status = ticket.Status
         };
     }
 
+    // ── PRINT TICKET ──────────────────────────────
+    public Task PrintTicketAsync(string companyCen, string ticketCen)
+    {
+        // TODO: Implementar integración con impresora / servicio de impresión
+        // Por ahora retornamos éxito (no bloquea el flujo)
+        return Task.CompletedTask;
+    }
+
+    // ── ITEMS ─────────────────────────────────────
+    public async Task<List<TicketItemContractResponse>> GetTicketItemsAsync(string companyCen, string ticketCen)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        return ticket.Items.Select(MapItemToContract).ToList();
+    }
+
+    public async Task<TicketContractResponse> AddItemAsync(string companyCen, string ticketCen, AddTicketItemContractRequest request)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        if (ticket.Status != "OPEN") throw new DomainException("El ticket ya está pagado o cancelado.");
+
+        // Resolve product by CEN (Code)
+        var products = await _uow.Products.GetAllAsync(p => p.CompanyId == companyId && p.Code == request.ProductCen && p.Active);
+        var product = products.FirstOrDefault()
+            ?? throw new NotFoundException($"Producto no encontrado: {request.ProductCen}");
+
+        var item = new TicketItem
+        {
+            TicketId = ticket.Id,
+            ProductId = product.Id,
+            Quantity = request.Quantity,
+            UnitPrice = product.Price,
+            Status = "PENDING",
+            Notes = request.Notes,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _uow.TicketItems.AddAsync(item);
+        await _uow.SaveAsync();
+
+        return await GetTicketAsync(companyCen, ticketCen);
+    }
+
+    public async Task<TicketContractResponse> UpdateItemAsync(string companyCen, string ticketCen, string ticketItemCen, UpdateTicketItemContractRequest request)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+        if (ticket.Status != "OPEN") throw new DomainException("Solo puedes actualizar items en tickets abiertos.");
+
+        if (!int.TryParse(ticketItemCen, out var itemId))
+            throw new ValidationException($"CEN de item inválido: {ticketItemCen}");
+
+        var item = ticket.Items.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item no encontrado: {ticketItemCen}");
+
+        if (request.Quantity.HasValue) item.Quantity = request.Quantity.Value;
+        if (request.Notes != null) item.Notes = request.Notes;
+        item.UpdatedAt = DateTime.UtcNow;
+
+        _uow.TicketItems.Update(item);
+        await _uow.SaveAsync();
+
+        return await GetTicketAsync(companyCen, ticketCen);
+    }
+
+    public async Task ResendItemAsync(string companyCen, string ticketCen, string ticketItemCen)
+    {
+        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var ticket = await ResolveTicketAsync(companyId, ticketCen);
+
+        if (!int.TryParse(ticketItemCen, out var itemId))
+            throw new ValidationException($"CEN de item inválido: {ticketItemCen}");
+
+        var item = ticket.Items.FirstOrDefault(i => i.Id == itemId)
+            ?? throw new NotFoundException($"Item no encontrado: {ticketItemCen}");
+
+        // Reenviar: volver a PENDING para que KDS lo recoja nuevamente
+        item.Status = "PENDING";
+        item.UpdatedAt = DateTime.UtcNow;
+
+        _uow.TicketItems.Update(item);
+        await _uow.SaveAsync();
+    }
+
+    // ── Private helpers ────────────────────────────
+    private static string BuildTicketNumber()
+    {
+        return $"T-{DateTime.UtcNow:yyyyMMddHHmmssfff}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
+    }
+
     private static (decimal Subtotal, decimal TaxAmount, decimal TotalAmount) CalculateTicketAmounts(
-        IEnumerable<TicketItem> items,
-        decimal taxRate)
+        IEnumerable<TicketItem> items, decimal taxRate)
     {
-        var activeSubtotal = items
-            .Where(item => !string.Equals(item.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
-            .Sum(item => item.Subtotal > 0 ? item.Subtotal : item.UnitPrice * item.Quantity);
-
-        var subtotal = RoundMoney(activeSubtotal);
+        var subtotal = RoundMoney(items
+            .Where(i => !string.Equals(i.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+            .Sum(i => i.Subtotal > 0 ? i.Subtotal : i.UnitPrice * i.Quantity));
         var taxAmount = RoundMoney(subtotal * (taxRate / 100m));
-        var totalAmount = RoundMoney(subtotal + taxAmount);
-
-        return (subtotal, taxAmount, totalAmount);
+        var total = RoundMoney(subtotal + taxAmount);
+        return (subtotal, taxAmount, total);
     }
 
-    private static decimal RoundMoney(decimal value)
+    private static decimal RoundMoney(decimal value) =>
+        Math.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private static TicketContractResponse MapToContractResponse(Ticket t)
     {
-        return Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        var amounts = CalculateTicketAmounts(t.Items, t.TaxRate);
+        return new TicketContractResponse
+        {
+            TicketCen = t.TicketNumber,
+            Status = t.Status,
+            ServiceType = t.ServiceType,
+            TableCode = t.TableCode,
+            WaiterName = t.Vendor?.Name,
+            Notes = t.Notes,
+            Subtotal = amounts.Subtotal,
+            TaxRate = t.TaxRate,
+            TaxAmount = amounts.TaxAmount,
+            TotalAmount = amounts.TotalAmount,
+            CreatedAt = t.CreatedAt,
+            PaidAt = t.PaidAt,
+            CancelledAt = t.CancelledAt,
+            Items = t.Items.Select(MapItemToContract).ToList()
+        };
     }
+
+    private static TicketItemContractResponse MapItemToContract(TicketItem i) => new()
+    {
+        TicketItemCen = i.Id.ToString(),
+        ProductCen = i.Product?.Code ?? string.Empty,
+        ProductName = i.Product?.Name ?? "Producto",
+        Quantity = i.Quantity,
+        UnitPrice = i.UnitPrice,
+        Subtotal = i.Subtotal > 0 ? i.Subtotal : i.UnitPrice * i.Quantity,
+        Status = i.Status,
+        Notes = i.Notes
+    };
 }
