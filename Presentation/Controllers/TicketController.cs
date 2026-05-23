@@ -5,10 +5,6 @@ using Sales.API.Application.Interfaces;
 
 namespace Sales.API.Presentation.Controllers;
 
-/// <summary>
-/// VentasTicketsContract — Parte del contrato público v1
-/// Base: /api/sales/companies/{companyCen}
-/// </summary>
 [ApiController]
 [Route("api/sales/companies/{companyCen}/tickets")]
 public class TicketController : ControllerBase
@@ -62,7 +58,6 @@ public class TicketController : ControllerBase
         }
         catch (ValidationException ex)
         {
-            // Return 400 with validation details from inventory service
             var payload = new { message = ex.Message, errors = ex.Errors };
             return BadRequest(payload);
         }
@@ -95,7 +90,6 @@ public class TicketController : ControllerBase
         return await _ticketService.PrintTicketAsync(companyCen, ticketCen);
     }
 
-    // ── ITEMS ───────────────────────────────────────
 
     [HttpGet("{ticketCen}/items")]
     public async Task<IActionResult> GetTicketItems(string companyCen, string ticketCen) =>
