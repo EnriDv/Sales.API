@@ -2,57 +2,75 @@ using System.Text.Json.Serialization;
 
 namespace Sales.API.Application.DTOs;
 
-// ── TICKETS CONTRACT ─────────────────────────
 public class TicketContractResponse
 {
-    public string TicketCen { get; set; } = string.Empty;  // TicketNumber
+    public string TicketCen { get; set; } = string.Empty;
+    public int DailyNumber { get; set; }
     public string Status { get; set; } = string.Empty;
-    public string? ServiceType { get; set; }
-    public string? TableCode { get; set; }
-    public string? WaiterName { get; set; }
-    public string? Notes { get; set; }
-    public decimal Subtotal { get; set; }
-    public decimal TaxRate { get; set; }
-    public decimal TaxAmount { get; set; }
-    public decimal TotalAmount { get; set; }
     public DateTime CreatedAt { get; set; }
-    public DateTime? PaidAt { get; set; }
-    public DateTime? CancelledAt { get; set; }
+    public string? WaiterCen { get; set; }
+    public string? CompanyCen { get; set; }
+    public decimal TaxAmount { get; set; }
+    
+    public decimal Subtotal { get; set; }
+    public decimal TotalAmount { get; set; }
     public List<TicketItemContractResponse> Items { get; set; } = new();
 }
 
 public class TicketItemContractResponse
 {
-    public string TicketItemCen { get; set; } = string.Empty; // Id.ToString()
+    public string TicketItemCen { get; set; } = string.Empty;
     public string ProductCen { get; set; } = string.Empty;
     public string ProductName { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
+    public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
-    public decimal Subtotal { get; set; }
+    public string? Note { get; set; }
     public string Status { get; set; } = string.Empty;
-
-    [JsonPropertyName("note")]
-    public string? Notes { get; set; }
+    public DateTime? SentAt { get; set; }
+    public int ResendCount { get; set; }
 }
 
 public class TicketTotalsContractResponse
 {
     public string TicketCen { get; set; } = string.Empty;
     public decimal Subtotal { get; set; }
-    public decimal TaxRate { get; set; }
     public decimal TaxAmount { get; set; }
-    public decimal TotalAmount { get; set; }
-    public int ItemCount { get; set; }
-    public string Status { get; set; } = string.Empty;
+    public decimal Total { get; set; }
 }
 
 public class PayTicketContractResponse
 {
+    public string SaleCen { get; set; } = string.Empty;
     public string TicketCen { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
-    public decimal TotalAmount { get; set; }
-    public string PaymentMethod { get; set; } = string.Empty;
-    public DateTime PaidAt { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal Total { get; set; }
+    public string? InventoryDocumentCen { get; set; }
+}
+
+public class ProcessRestaurantOrderPaymentResultDto
+{
+    public bool IsSuccess { get; set; }
+    public int? SaleId { get; set; }
+    public string? SaleCen { get; set; }
+    public string? InventoryDocumentCen { get; set; }
+    public decimal Subtotal { get; set; }
+    public decimal TaxAmount { get; set; }
+    public decimal Total { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<StockInsufficiencyResponseDto> Insufficiencies { get; set; } = new();
+}
+
+public class StockInsufficiencyResponseDto
+{
+    public int ProductId { get; set; }
+    public string? ProductCen { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public string? WarehouseCen { get; set; }
+    public int RequestedQuantity { get; set; }
+    public int AvailableQuantity { get; set; }
+    public int MissingQuantity { get; set; }
 }
 
 public class CancelTicketContractResponse
@@ -68,103 +86,92 @@ public class AssignTicketWaiterContractResponse
     public string WaiterName { get; set; } = string.Empty;
 }
 
-// ── KDS CONTRACT ─────────────────────────────
 public class KdsTeamContractResponse
 {
-    public string TeamCen { get; set; } = string.Empty;  // command_station.code
+    public string TeamCen { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;    // station_type
-    public bool Active { get; set; }
+    public List<string> CategoryCens { get; set; } = new();
 }
 
 public class KdsItemContractResponse
 {
     public string TicketItemCen { get; set; } = string.Empty;
-    public string ProductName { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public string? Notes { get; set; }
     public string TicketCen { get; set; } = string.Empty;
-    public string? TableCode { get; set; }
+    public string ProductCen { get; set; } = string.Empty;
+    public string ProductName { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? Note { get; set; }
+    public int ResendCount { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
-// ── DASHBOARD CONTRACT ───────────────────────
-public class DailySalesDashboardContractDto
+public class DailySalesDashboardDto
 {
-    [JsonIgnore]
-    public DateTime Date { get; set; }
-
     public decimal TotalSales { get; set; }
-
-    [JsonPropertyName("ticketsCount")]
     public int TicketsCount { get; set; }
-
     public decimal AverageTicket { get; set; }
 }
 
-public class TopProductDashboardContractDto
+public class TopProductDashboardContractResponse
 {
-    public string ProductCen { get; set; } = string.Empty;
+    public string? ProductCen { get; set; }
     public string ProductName { get; set; } = string.Empty;
-    public decimal TotalQuantity { get; set; }
-    public decimal TotalRevenue { get; set; }
-    public int OrderCount { get; set; }
+    public int TotalQuantity { get; set; }
+    public string? CategoryCen { get; set; }
+    public string? CategoryName { get; set; }
+    public decimal SalePrice { get; set; }
 }
 
-public class KdsDashboardStatusContractDto
+public class KdsStatusDashboardDto
 {
-    public int Pending { get; set; }
-    public int Preparing { get; set; }
-    public int Delivered { get; set; }
-    public int Total { get; set; }
+    public int PendingCount { get; set; }
+    public int PreparingCount { get; set; }
+    public int ReadyCount { get; set; }
 }
 
-// ── TAX CONFIGURATION CONTRACT ───────────────
 public class TaxConfigurationContractResponse
 {
     public string CompanyCen { get; set; } = string.Empty;
-
-    [JsonPropertyName("globalTaxPercentage")]
     public decimal GlobalTaxPercentage { get; set; }
 }
 
-// ── PAYMENT METHODS CONTRACT ─────────────────
 public class PaymentMethodContractResponse
 {
-    public string PaymentMethodCen { get; set; } = string.Empty;
+    public string PaymentMethodCode { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
+    public bool IsActive { get; set; }
 }
 
-// ── WAITERS CONTRACT ─────────────────────────
 public class WaiterContractResponse
 {
     public string WaiterCen { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
 }
 
-// ── CATALOG (Sellable Products) CONTRACT ─────
 public class SellableProductContractDto
 {
     public string ProductCen { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string CategoryCen { get; set; } = string.Empty;
     public string CategoryName { get; set; } = string.Empty;
-
-    [JsonPropertyName("salePrice")]
+    public string? WarehouseCen { get; set; }
     public decimal SalePrice { get; set; }
-
-    [JsonPropertyName("availableQuantity")]
     public decimal AvailableQuantity { get; set; }
-
-    [JsonPropertyName("isAvailable")]
     public bool IsAvailable { get; set; }
-
     public string? StationCode { get; set; }
 }
 
-// ── LEGACY (kept for TicketService backward compat) ──
+public class ProductLookupContractDto
+{
+    public string ProductCen { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Sku { get; set; } = string.Empty;
+    public decimal SalePrice { get; set; }
+    public string? CategoryCen { get; set; }
+    public string? CategoryName { get; set; }
+}
+
 public class CustomerResponse
 {
     public int Id { get; set; }
