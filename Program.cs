@@ -1,10 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Sales.API.Application.Interfaces;
 using Sales.API.Application.Services;
+using Sales.API.Application.Extensions;
 using Sales.API.Infrastructure.Persistence;
+using Sales.API.Infrastructure.Middleware;
 using Sales.API.Infrastructure.Repositories;
 using Scalar.AspNetCore;
 using Shared.Core.Middleware;
+
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,7 +28,9 @@ builder.Services.AddScoped<ISalesDashboardService, SalesDashboardService>();
 builder.Services.AddScoped<ITaxConfigurationService, TaxConfigurationService>();
 builder.Services.AddScoped<IPaymentMethodService, PaymentMethodService>();
 builder.Services.AddScoped<IWaiterService, WaiterService>();
+builder.Services.AddInventoryApiClient(builder.Configuration);
 builder.Services.AddScoped<ISalesCatalogService, SalesCatalogService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -37,6 +43,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseSimpleIdempotency();
 
 if (app.Environment.IsDevelopment())
 {
