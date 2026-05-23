@@ -69,15 +69,22 @@ public class KdsService : IKdsService
         if (normalizedStatus.Contains("CANCEL"))
         {
             item.IsDeleted = true;
+            var canceledStatus = (await _uow.RestaurantOrderDetailStatuses.GetAllAsync(s => s.Name.ToUpper() == "CANCELED")).FirstOrDefault();
+            if (canceledStatus != null)
+            {
+                item.RestaurantOrderDetailStatusId = canceledStatus.Id;
+            }
         }
         else
         {
             var targetStatusName = normalizedStatus switch
             {
-                "DELIVERED" => "COMPLETED",
-                "READY" => "COMPLETED",
-                "PREPARING" => "SENT",
-                "CREATED" => "PENDING",
+                "DELIVERED" => "DELIVERED",
+                "READY" => "DELIVERED",
+                "PREPARING" => "PREPARING",
+                "SENT" => "PREPARING",
+                "CREATED" => "CREATED",
+                "PENDING" => "CREATED",
                 _ => normalizedStatus
             };
 
@@ -99,14 +106,18 @@ public class KdsService : IKdsService
             return "canceled";
         }
 
-        var statusName = item.RestaurantOrderDetailStatus?.Name?.Trim().ToUpperInvariant() ?? "PENDING";
+        var statusName = item.RestaurantOrderDetailStatus?.Name?.Trim().ToUpperInvariant() ?? "CREATED";
         return statusName switch
         {
+            "CREATED" => "created",
             "PENDING" => "created",
+            "PREPARING" => "preparing",
             "SENT" => "preparing",
             "IN_COMMAND" => "preparing",
+            "DELIVERED" => "delivered",
             "COMPLETED" => "delivered",
             "SERVED" => "delivered",
+            "CANCELED" => "canceled",
             "CANCELLED" => "canceled",
             _ => "created"
         };

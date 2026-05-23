@@ -66,6 +66,8 @@ public class InventoryApiClient : IInventoryApiClient
         var request = new ProductLookupContractRequest { ProductCens = cens };
         var path = BuildProductLookupPath(companyCen);
 
+        Console.WriteLine($"Inventory lookup request (company={companyCen}) -> {cens.Count} cens: {string.Join(',', cens)}");
+
         using var response = await _httpClient.PostAsJsonAsync(path, request, JsonOptions);
 
         if (!response.IsSuccessStatusCode)
@@ -73,7 +75,10 @@ public class InventoryApiClient : IInventoryApiClient
             await ThrowUpstreamExceptionAsync(response, "looking up products");
         }
 
-        var products = await response.Content.ReadFromJsonAsync<List<ProductLookupContractDto>>(JsonOptions)
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Inventory lookup response body: {responseBody}");
+
+        var products = System.Text.Json.JsonSerializer.Deserialize<List<ProductLookupContractDto>>(responseBody, JsonOptions)
                        ?? new List<ProductLookupContractDto>();
 
         return products

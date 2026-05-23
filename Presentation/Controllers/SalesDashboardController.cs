@@ -16,8 +16,8 @@ public class SalesDashboardController : ControllerBase
         Ok(await _dashboard.GetDailySalesAsync(companyCen, date));
 
     [HttpGet("top-products")]
-    public async Task<IActionResult> GetTopProducts(string companyCen, [FromQuery] int topN = 10) =>
-        Ok(await _dashboard.GetTopProductsAsync(companyCen, topN));
+    public async Task<IActionResult> GetTopProducts(string companyCen, [FromQuery] int topN = 10, [FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null) =>
+        Ok(await _dashboard.GetTopProductsAsync(companyCen, topN, startDate, endDate));
 
     [HttpGet("kds-status")]
     public async Task<IActionResult> GetKdsStatus(string companyCen) =>

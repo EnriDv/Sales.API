@@ -33,7 +33,7 @@ public interface IKdsService
 public interface ISalesDashboardService
 {
     Task<DailySalesDashboardDto> GetDailySalesAsync(string companyCen, DateTime? date = null);
-    Task<List<TopProductDashboardContractResponse>> GetTopProductsAsync(string companyCen, int topN = 10);
+    Task<List<TopProductDashboardContractResponse>> GetTopProductsAsync(string companyCen, int topN = 10, DateTime? startDate = null, DateTime? endDate = null);
     Task<KdsStatusDashboardDto> GetKdsStatusAsync(string companyCen);
 }
 

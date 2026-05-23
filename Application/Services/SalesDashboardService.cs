@@ -33,18 +33,26 @@ public class SalesDashboardService : ISalesDashboardService
         };
     }
 
-    public async Task<List<TopProductDashboardContractResponse>> GetTopProductsAsync(string companyCen, int topN = 10)
+    public async Task<List<TopProductDashboardContractResponse>> GetTopProductsAsync(string companyCen, int topN = 10, DateTime? startDate = null, DateTime? endDate = null)
     {
         var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
-        var sales = await _uow.Sales.GetAllAsync(s => s.CompanyId == companyId, "SaleDetails");
+        var sales = await _uow.Sales.GetAllAsync(
+            s => s.CompanyId == companyId
+                 && !s.IsDeleted
+                 && (startDate == null || s.SaleDatetime >= startDate.Value)
+                 && (endDate == null || s.SaleDatetime < endDate.Value),
+            "SaleDetails");
         var productCens = sales
             .SelectMany(s => s.SaleDetails)
             .Select(i => CenParser.Format(i.ProductCen))
             .Where(cen => !string.IsNullOrWhiteSpace(cen))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        Console.WriteLine($"Found {productCens.Count} unique product cens in sales data for company {companyCen} between {startDate} and {endDate}.");
 
         var productLookupMap = await _inventoryApiClient.GetProductLookupMapAsync(companyCen, productCens);
+
+        Console.WriteLine($"Retrieved product lookup map with {productLookupMap.Count} entries for company {companyCen}.");
         
         var topProducts = sales
             .SelectMany(s => s.SaleDetails)
@@ -66,9 +74,11 @@ public class SalesDashboardService : ISalesDashboardService
                     ? matchedProduct.SalePrice
                     : g.First().Price
             })
-            .OrderByDescending(p => p.TotalQuantity) // by quantity or revenue
+            .OrderByDescending(p => p.TotalQuantity)
             .Take(topN)
             .ToList();
+
+            Console.WriteLine($"Calculated top {topN} products for company {companyCen} between {startDate} and {endDate}.");
 
         return topProducts;
     }

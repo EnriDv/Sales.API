@@ -38,18 +38,31 @@ public class TicketService : ITicketService
 
     private async Task<int> GetItemStatusIdAsync(string statusName)
     {
-        var statuses = await _uow.RestaurantOrderDetailStatuses.GetAllAsync(s => s.Name.ToUpper() == statusName.ToUpper());
+        var normalized = statusName.Trim().ToUpperInvariant();
+        var dbStatusName = normalized switch
+        {
+            "PENDING" => "CREATED",
+            "CREATED" => "CREATED",
+            "SENT" => "PREPARING",
+            "PREPARING" => "PREPARING",
+            "IN_COMMAND" => "PREPARING",
+            "COMPLETED" => "DELIVERED",
+            "SERVED" => "DELIVERED",
+            "DELIVERED" => "DELIVERED",
+            "CANCELLED" => "CANCELED",
+            "CANCELED" => "CANCELED",
+            _ => normalized
+        };
+
+        var statuses = await _uow.RestaurantOrderDetailStatuses.GetAllAsync(s => s.Name.ToUpper() == dbStatusName);
         var status = statuses.FirstOrDefault();
         if (status != null) return status.Id;
         
-        return statusName.ToUpper() switch {
-            "PENDING" => 1,
-            "SENT" => 2,
-            "IN_COMMAND" => 2,
-            "COMPLETED" => 3,
+        return dbStatusName switch {
+            "CREATED" => 1,
             "PREPARING" => 2,
-            "SERVED" => 3,
-            "CANCELLED" => 3,
+            "DELIVERED" => 3,
+            "CANCELED" => 4,
             _ => 1
         };
     }
@@ -220,6 +233,40 @@ public class TicketService : ITicketService
         var paymentTypeId = paymentType?.Id ?? 1;
 
         var companyCenGuid = CenParser.ParseRequired(companyCen, "empresa");
+        var mainWarehouse = await SalesCenResolver.ResolveMainWarehouseCenAsync(_uow, companyCen);
+        var currentStock = await _inventoryApiClient.GetSellableProductsAsync(
+            companyCen,
+            warehouseCen: mainWarehouse,
+            onlyAvailable: false);
+        var stockByProduct = currentStock
+            .Where(product => !string.IsNullOrWhiteSpace(product.ProductCen))
+            .ToDictionary(product => product.ProductCen, product => product, StringComparer.OrdinalIgnoreCase);
+
+        var insufficientItems = ticket.RestaurantOrderDetails
+            .Where(item => !item.IsDeleted)
+            .Select(item =>
+            {
+                var productCen = CenParser.Format(item.ProductCen);
+                stockByProduct.TryGetValue(productCen, out var product);
+                var availableQuantity = product?.AvailableQuantity ?? 0;
+                return new
+                {
+                    ProductCen = productCen,
+                    Requested = (decimal)item.Quantity,
+                    Available = availableQuantity,
+                    Name = product?.Name ?? $"Producto {productCen}"
+                };
+            })
+            .Where(item => item.Available < item.Requested)
+            .ToList();
+
+        if (insufficientItems.Count > 0)
+        {
+            var message = string.Join(
+                "; ",
+                insufficientItems.Select(item => $"{item.Name}: disponible {item.Available}, requerido {item.Requested}"));
+            throw new ConflictException($"Stock insuficiente para confirmar el ticket. {message}");
+        }
 
         await using var tx = await _ctx.Database.BeginTransactionAsync();
         try
@@ -244,9 +291,30 @@ public class TicketService : ITicketService
             ticket.Order.OrderStatusId = await GetOrderStatusIdAsync("PAID");
             _uow.Orders.Update(ticket.Order);
 
+            var deliveredId = await GetItemStatusIdAsync("DELIVERED");
+            foreach (var item in ticket.RestaurantOrderDetails.Where(i => !i.IsDeleted))
+            {
+                item.RestaurantOrderDetailStatusId = deliveredId;
+                _uow.RestaurantOrderDetails.Update(item);
+            }
+
             await _uow.SaveAsync();
 
-            var mainWarehouse = await SalesCenResolver.ResolveMainWarehouseCenAsync(_uow, companyCen);
+            foreach (var od in ticket.Order.OrderDetails.Where(i => !i.IsDeleted))
+            {
+                var sd = new SaleDetail
+                {
+                    SaleId = sale.Id,
+                    ProductId = od.ProductId,
+                    ProductCen = od.ProductCen,
+                    Price = od.ProductPrice,
+                    Quantity = od.Quantity,
+                    CreatedAt = DateTime.UtcNow,
+                    IsDeleted = false
+                };
+                await _uow.SaleDetails.AddAsync(sd);
+            }
+            await _uow.SaveAsync();
 
             var consumeRequest = new ConsumeStockContractRequest
             {
@@ -302,9 +370,12 @@ public class TicketService : ITicketService
         _uow.Orders.Update(ticket.Order);
         _uow.RestaurantOrders.Update(ticket);
 
+        var canceledId = await GetItemStatusIdAsync("CANCELLED");
+
         foreach (var item in ticket.RestaurantOrderDetails)
         {
             item.IsDeleted = true;
+            item.RestaurantOrderDetailStatusId = canceledId;
             _uow.RestaurantOrderDetails.Update(item);
         }
 
