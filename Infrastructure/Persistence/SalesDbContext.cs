@@ -1,221 +1,314 @@
+﻿using System;
+using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Sales.API.Domain.Entities;
 
 namespace Sales.API.Infrastructure.Persistence;
 
-public class SalesDbContext : DbContext
+public partial class SalesDbContext : DbContext
 {
-    public SalesDbContext(DbContextOptions<SalesDbContext> options) : base(options)
+    public SalesDbContext()
     {
     }
 
-    // Entidades de Lectura (Esquema Inventory)
-    public DbSet<Company> Companies { get; set; }
-    public DbSet<Location> Locations { get; set; }
-    public DbSet<Category> Categories { get; set; }
-    public DbSet<Product> Products { get; set; }
-    public DbSet<ProductStock> ProductStocks { get; set; }
-    public DbSet<WarehouseRef> Warehouses { get; set; }
+    public SalesDbContext(DbContextOptions<SalesDbContext> options)
+        : base(options)
+    {
+    }
 
-    // Entidades Propias (Esquema Sales)
-    public DbSet<SalesSetting> SalesSettings { get; set; }
-    public DbSet<Vendor> Vendors { get; set; }
-    public DbSet<Customer> Customers { get; set; }
-    public DbSet<Ticket> Tickets { get; set; }
-    public DbSet<TicketItem> TicketItems { get; set; }
-    public DbSet<Payment> Payments { get; set; }
+    public virtual DbSet<Customer> Customers { get; set; }
+
+    public virtual DbSet<Order> Orders { get; set; }
+
+    public virtual DbSet<OrderDetail> OrderDetails { get; set; }
+
+    public virtual DbSet<OrderStatus> OrderStatuses { get; set; }
+
+    public virtual DbSet<PaymentType> PaymentTypes { get; set; }
+
+    public virtual DbSet<RestaurantOrder> RestaurantOrders { get; set; }
+
+    public virtual DbSet<RestaurantOrderDetail> RestaurantOrderDetails { get; set; }
+
+    public virtual DbSet<RestaurantOrderDetailStatus> RestaurantOrderDetailStatuses { get; set; }
+
+    public virtual DbSet<Sale> Sales { get; set; }
+
+    public virtual DbSet<SaleDetail> SaleDetails { get; set; }
+
+    public virtual DbSet<TaxConfiguration> TaxConfigurations { get; set; }
+
+    public virtual DbSet<Team> Teams { get; set; }
+
+    public virtual DbSet<TeamConfiguration> TeamConfigurations { get; set; }
+
+    public virtual DbSet<Waiter> Waiters { get; set; }
+
+    public virtual DbSet<WarehouseConfiguration> WarehouseConfigurations { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=unifiedDB;Username=postgres;Password=Passw0rd123");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasDefaultSchema("sales");
-
-        modelBuilder.Entity<Company>(entity =>
-        {
-            entity.ToTable("companies", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(e => e.Name).HasColumnName("name");
-        });
-
-        modelBuilder.Entity<Location>(entity =>
-        {
-            entity.ToTable("locations", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.Name).HasColumnName("name");
-        });
-
-        modelBuilder.Entity<Category>(entity =>
-        {
-            entity.ToTable("categories", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.Code).HasColumnName("code");
-            entity.Property(e => e.Name).HasColumnName("name");
-            entity.Property(e => e.Active).HasColumnName("active");
-        });
-
-        modelBuilder.Entity<Product>(entity =>
-        {
-            entity.ToTable("products", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.Code).HasColumnName("code");
-            entity.Property(e => e.Sku).HasColumnName("sku");
-            entity.Property(e => e.Name).HasColumnName("name");
-            entity.Property(e => e.Description).HasColumnName("description");
-            entity.Property(e => e.CategoryId).HasColumnName("category_id");
-            entity.Property(e => e.Price).HasColumnName("price");
-            entity.Property(e => e.IsOutOfStock).HasColumnName("is_out_of_stock");
-            entity.Property(e => e.Active).HasColumnName("active");
-            entity.Property(e => e.StationCode).HasColumnName("station_code");
-
-            entity.HasOne(d => d.Category).WithMany().HasForeignKey(d => d.CategoryId);
-        });
-
-        modelBuilder.Entity<WarehouseRef>(entity =>
-        {
-            entity.ToTable("warehouses", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
-            entity.Property(e => e.Code).HasColumnName("code");
-        });
-
-        modelBuilder.Entity<ProductStock>(entity =>
-        {
-            entity.ToTable("stocks", "inventory");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.ProductId).HasColumnName("product_id");
-            entity.Property(e => e.WarehouseId).HasColumnName("warehouse_id");
-            entity.Property(e => e.Quantity).HasColumnName("quantity");
-
-            entity.HasOne(d => d.Product).WithMany(p => p.Stocks).HasForeignKey(d => d.ProductId);
-            entity.HasOne(d => d.Warehouse).WithMany().HasForeignKey(d => d.WarehouseId);
-        });
-
-        // --- MAPEO INTERNO (SALES) ---
-        modelBuilder.Entity<SalesSetting>(entity =>
-        {
-            entity.ToTable("sales_settings");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.TaxRate).HasColumnName("tax_rate");
-            entity.Property(e => e.PaymentMethods).HasColumnName("payment_methods");
-            entity.Property(e => e.Active).HasColumnName("active");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-
-            entity.HasOne(d => d.Company).WithMany().HasForeignKey(d => d.CompanyId);
-        });
-
-        modelBuilder.Entity<Vendor>(entity =>
-        {
-            entity.ToTable("vendors");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.Name).HasColumnName("name");
-            entity.Property(e => e.Email).HasColumnName("email");
-            entity.Property(e => e.Phone).HasColumnName("phone");
-            entity.Property(e => e.IsWaiter).HasColumnName("is_waiter");
-            entity.Property(e => e.Active).HasColumnName("active");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-
-            entity.HasOne(d => d.Company).WithMany().HasForeignKey(d => d.CompanyId);
-        });
-
         modelBuilder.Entity<Customer>(entity =>
         {
-            entity.ToTable("customers");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.Name).HasColumnName("name");
-            entity.Property(e => e.Phone).HasColumnName("phone");
-            entity.Property(e => e.Email).HasColumnName("email");
-            entity.Property(e => e.Address).HasColumnName("address");
-            entity.Property(e => e.Active).HasColumnName("active");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.HasKey(e => e.Id).HasName("customers_pkey");
 
-            entity.HasOne(d => d.Company).WithMany().HasForeignKey(d => d.CompanyId);
+            entity.ToTable("customers", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Email).HasMaxLength(255);
+            entity.Property(e => e.Name).HasMaxLength(255);
+            entity.Property(e => e.PhoneNumber).HasMaxLength(50);
         });
 
-        modelBuilder.Entity<Ticket>(entity =>
+        modelBuilder.Entity<Order>(entity =>
         {
-            entity.ToTable("tickets");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.CompanyId).HasColumnName("company_id");
-            entity.Property(e => e.LocationId).HasColumnName("location_id");
-            entity.Property(e => e.TicketNumber).HasColumnName("ticket_number");
-            entity.Property(e => e.VendorId).HasColumnName("vendor_id");
-            entity.Property(e => e.CustomerId).HasColumnName("customer_id");
-            entity.Property(e => e.ServiceType).HasColumnName("service_type");
-            entity.Property(e => e.TableCode).HasColumnName("table_code");
-            entity.Property(e => e.Status).HasColumnName("status");
-            entity.Property(e => e.Subtotal).HasColumnName("subtotal");
-            entity.Property(e => e.TaxRate).HasColumnName("tax_rate");
-            entity.Property(e => e.TaxAmount).HasColumnName("tax_amount");
-            entity.Property(e => e.TotalAmount).HasColumnName("total_amount");
-            entity.Property(e => e.Notes).HasColumnName("notes");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.OpenedAt).HasColumnName("opened_at");
-            entity.Property(e => e.PaidAt).HasColumnName("paid_at");
-            entity.Property(e => e.CancelledAt).HasColumnName("cancelled_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.HasKey(e => e.Id).HasName("orders_pkey");
 
-            entity.HasOne(d => d.Company).WithMany().HasForeignKey(d => d.CompanyId);
-            entity.HasOne(d => d.Location).WithMany().HasForeignKey(d => d.LocationId);
-            entity.HasOne(d => d.Vendor).WithMany(p => p.Tickets).HasForeignKey(d => d.VendorId);
-            entity.HasOne(d => d.Customer).WithMany(p => p.Tickets).HasForeignKey(d => d.CustomerId);
+            entity.ToTable("orders", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.OrderDatetime)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.TaxPrice).HasPrecision(12, 2);
+
+            entity.HasOne(d => d.Customer).WithMany(p => p.Orders)
+                .HasForeignKey(d => d.CustomerId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("orders_CustomerId_fkey");
+
+            entity.HasOne(d => d.OrderStatus).WithMany(p => p.Orders)
+                .HasForeignKey(d => d.OrderStatusId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("orders_OrderStatusId_fkey");
         });
 
-        modelBuilder.Entity<TicketItem>(entity =>
+        modelBuilder.Entity<OrderDetail>(entity =>
         {
-            entity.ToTable("ticket_items");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.TicketId).HasColumnName("ticket_id");
-            entity.Property(e => e.ProductId).HasColumnName("product_id");
-            entity.Property(e => e.Quantity).HasColumnName("quantity");
-            entity.Property(e => e.UnitPrice).HasColumnName("unit_price");
-            
-            // Subtotal calculado y almacenado por BD
-            entity.Property(e => e.Subtotal)
-                  .HasColumnName("subtotal")
-                  .HasComputedColumnSql("(ROUND(quantity * unit_price, 2))", stored: true);
-                  
-            entity.Property(e => e.Status).HasColumnName("status");
-            entity.Property(e => e.Notes).HasColumnName("notes");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.HasKey(e => e.Id).HasName("order_details_pkey");
 
-            entity.HasOne(d => d.Ticket).WithMany(p => p.Items).HasForeignKey(d => d.TicketId);
-            entity.HasOne(d => d.Product).WithMany().HasForeignKey(d => d.ProductId);
+            entity.ToTable("order_details", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.ProductPrice).HasPrecision(12, 2);
+            entity.Property(e => e.Quantity).HasDefaultValue(1);
+
+            entity.HasOne(d => d.Order).WithMany(p => p.OrderDetails)
+                .HasForeignKey(d => d.OrderId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("order_details_OrderId_fkey");
         });
 
-        modelBuilder.Entity<Payment>(entity =>
+        modelBuilder.Entity<OrderStatus>(entity =>
         {
-            entity.ToTable("payments");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.TicketId).HasColumnName("ticket_id");
-            entity.Property(e => e.PaymentMethod).HasColumnName("payment_method");
-            entity.Property(e => e.Amount).HasColumnName("amount");
-            entity.Property(e => e.Reference).HasColumnName("reference");
-            entity.Property(e => e.PaidBy).HasColumnName("paid_by");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.HasKey(e => e.Id).HasName("order_statuses_pkey");
 
-            entity.HasOne(d => d.Ticket).WithMany(p => p.Payments).HasForeignKey(d => d.TicketId);
+            entity.ToTable("order_statuses", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Name).HasMaxLength(100);
         });
+
+        modelBuilder.Entity<PaymentType>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("payment_types_pkey");
+
+            entity.ToTable("payment_types", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Name).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<RestaurantOrder>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("restaurant_orders_pkey");
+
+            entity.ToTable("restaurant_orders", "sal");
+
+            entity.HasIndex(e => e.Cen, "restaurant_orders_Cen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+
+            entity.HasOne(d => d.Order).WithMany(p => p.RestaurantOrders)
+                .HasForeignKey(d => d.OrderId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("restaurant_orders_OrderId_fkey");
+
+            entity.HasOne(d => d.Waiter).WithMany(p => p.RestaurantOrders)
+                .HasForeignKey(d => d.WaiterId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("restaurant_orders_WaiterId_fkey");
+        });
+
+        modelBuilder.Entity<RestaurantOrderDetail>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("restaurant_order_details_pkey");
+
+            entity.ToTable("restaurant_order_details", "sal");
+
+            entity.HasIndex(e => e.Cen, "restaurant_order_details_Cen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Quantity).HasDefaultValue(1);
+            entity.Property(e => e.SentAt).HasColumnType("timestamp without time zone");
+
+            entity.HasOne(d => d.RestaurantOrderDetailStatus).WithMany(p => p.RestaurantOrderDetails)
+                .HasForeignKey(d => d.RestaurantOrderDetailStatusId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("restaurant_order_details_RestaurantOrderDetailStatusId_fkey");
+
+            entity.HasOne(d => d.RestaurantOrder).WithMany(p => p.RestaurantOrderDetails)
+                .HasForeignKey(d => d.RestaurantOrderId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("restaurant_order_details_RestaurantOrderId_fkey");
+        });
+
+        modelBuilder.Entity<RestaurantOrderDetailStatus>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("restaurant_order_detail_statuses_pkey");
+
+            entity.ToTable("restaurant_order_detail_statuses", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Name).HasMaxLength(100);
+        });
+
+        modelBuilder.Entity<Sale>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("sales_pkey");
+
+            entity.ToTable("sales", "sal");
+
+            entity.HasIndex(e => e.Cen, "sales_Cen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.DiscountPercentage).HasPrecision(5, 2);
+            entity.Property(e => e.SaleDatetime)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.SubtotalPrice).HasPrecision(12, 2);
+            entity.Property(e => e.TaxPrice).HasPrecision(12, 2);
+
+            entity.HasOne(d => d.Customer).WithMany(p => p.Sales)
+                .HasForeignKey(d => d.CustomerId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("sales_CustomerId_fkey");
+
+            entity.HasOne(d => d.PaymentType).WithMany(p => p.Sales)
+                .HasForeignKey(d => d.PaymentTypeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("sales_PaymentTypeId_fkey");
+        });
+
+        modelBuilder.Entity<SaleDetail>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("sale_details_pkey");
+
+            entity.ToTable("sale_details", "sal");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Price).HasPrecision(12, 2);
+            entity.Property(e => e.Quantity).HasDefaultValue(1);
+
+            entity.HasOne(d => d.Sale).WithMany(p => p.SaleDetails)
+                .HasForeignKey(d => d.SaleId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("sale_details_SaleId_fkey");
+        });
+
+        modelBuilder.Entity<TaxConfiguration>(entity =>
+        {
+            entity.HasKey(e => e.CompanyId).HasName("tax_configurations_pkey");
+
+            entity.ToTable("tax_configurations", "sal");
+
+            entity.HasIndex(e => e.CompanyCen, "tax_configurations_CompanyCen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.GlobalTaxPercentage).HasPrecision(10, 2);
+        });
+
+        modelBuilder.Entity<Team>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("teams_pkey");
+
+            entity.ToTable("teams", "sal");
+
+            entity.HasIndex(e => e.Cen, "teams_Cen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Name).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<TeamConfiguration>(entity =>
+        {
+            entity.HasKey(e => new { e.CompanyId, e.CategoryId, e.TeamId }).HasName("team_configurations_pkey");
+
+            entity.ToTable("team_configurations", "sal");
+
+            entity.HasOne(d => d.Team).WithMany(p => p.TeamConfigurations)
+                .HasForeignKey(d => d.TeamId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("team_configurations_TeamId_fkey");
+        });
+
+        modelBuilder.Entity<Waiter>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("waiters_pkey");
+
+            entity.ToTable("waiters", "sal");
+
+            entity.HasIndex(e => e.Cen, "waiters_Cen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+            entity.Property(e => e.Name).HasMaxLength(255);
+        });
+
+        modelBuilder.Entity<WarehouseConfiguration>(entity =>
+        {
+            entity.HasKey(e => e.CompanyId).HasName("warehouse_configurations_pkey");
+
+            entity.ToTable("warehouse_configurations", "sal");
+
+            entity.HasIndex(e => e.CompanyCen, "warehouse_configurations_CompanyCen_key").IsUnique();
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("now()")
+                .HasColumnType("timestamp without time zone");
+        });
+
+        OnModelCreatingPartial(modelBuilder);
     }
+
+    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
 }
