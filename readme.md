@@ -1,6 +1,5 @@
 # Sales.API — README
 
-
 ## Configuración
 - Archivo: `appsettings.json`
 - Valores importantes:
@@ -24,6 +23,3 @@ dotnet run
 ```
 
 Swagger: `http://localhost:5068/swagger`
-
-
-
