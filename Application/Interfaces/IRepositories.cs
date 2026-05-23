@@ -12,28 +12,23 @@ public interface IGenericRepository<T> where T : class
     void Delete(T entity);
 }
 
-public interface ITicketRepository
-{
-    Task<Ticket?> GetTicketWithDetailsAsync(int companyId, int ticketId);
-    Task<Ticket?> GetTicketByCenAsync(int companyId, string ticketCen);
-    Task<List<Ticket>> GetAllTicketsAsync(int companyId, string? status = null);
-    Task<List<Ticket>> GetActiveTicketsAsync(int companyId, int locationId);
-    Task<List<Ticket>> GetTicketHistoryAsync(int companyId, int locationId, int take);
-}
-
 public interface IUnitOfWork
 {
-    IGenericRepository<Company> Companies { get; }
-    IGenericRepository<Location> Locations { get; }
-    IGenericRepository<Product> Products { get; }
-    IGenericRepository<SalesSetting> SalesSettings { get; }
-    IGenericRepository<Vendor> Vendors { get; }
     IGenericRepository<Customer> Customers { get; }
-    IGenericRepository<Ticket> Tickets { get; }
-    IGenericRepository<TicketItem> TicketItems { get; }
-    IGenericRepository<Payment> Payments { get; }
-    
-    ITicketRepository TicketQueries { get; }
-    
+    IGenericRepository<Order> Orders { get; }
+    IGenericRepository<OrderDetail> OrderDetails { get; }
+    IGenericRepository<OrderStatus> OrderStatuses { get; }
+    IGenericRepository<PaymentType> PaymentTypes { get; }
+    IGenericRepository<RestaurantOrder> RestaurantOrders { get; }
+    IGenericRepository<RestaurantOrderDetail> RestaurantOrderDetails { get; }
+    IGenericRepository<RestaurantOrderDetailStatus> RestaurantOrderDetailStatuses { get; }
+    IGenericRepository<Sale> Sales { get; }
+    IGenericRepository<SaleDetail> SaleDetails { get; }
+    IGenericRepository<TaxConfiguration> TaxConfigurations { get; }
+    IGenericRepository<Team> Teams { get; }
+    IGenericRepository<TeamConfiguration> TeamConfigurations { get; }
+    IGenericRepository<Waiter> Waiters { get; }
+    IGenericRepository<WarehouseConfiguration> WarehouseConfigurations { get; }
+
     Task SaveAsync();
 }
