@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Shared.Core.Exceptions;
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
 
@@ -39,7 +40,7 @@ public class TicketController : ControllerBase
         Ok(await _ticketService.GetTicketTotalsAsync(companyCen, ticketCen));
 
     [HttpPut("{ticketCen}/waiter")]
-    public async Task<IActionResult> AssignWaiter(string companyCen, string ticketCen, [FromBody] AssignWaiterContractRequest request) =>
+    public async Task<IActionResult> AssignWaiter(string companyCen, string ticketCen, [FromBody] AssignTicketWaiterContractRequest request) =>
         Ok(await _ticketService.AssignWaiterAsync(companyCen, ticketCen, request));
 
     [HttpPost("{ticketCen}/send")]
@@ -50,18 +51,48 @@ public class TicketController : ControllerBase
     }
 
     [HttpPost("{ticketCen}/payment")]
-    public async Task<IActionResult> PayTicket(string companyCen, string ticketCen, [FromBody] PayTicketContractRequest request) =>
-        Ok(await _ticketService.PayTicketAsync(companyCen, ticketCen, request));
+    public async Task<IActionResult> PayTicket(string companyCen, string ticketCen, [FromBody] PayTicketContractRequest request)
+    {
+        var totals = await _ticketService.GetTicketTotalsAsync(companyCen, ticketCen);
+
+        try
+        {
+            var result = await _ticketService.PayTicketAsync(companyCen, ticketCen, request);
+            return Ok(result);
+        }
+        catch (ValidationException ex)
+        {
+            // Return 400 with validation details from inventory service
+            var payload = new { message = ex.Message, errors = ex.Errors };
+            return BadRequest(payload);
+        }
+        catch (ConflictException ex)
+        {
+            var response = new ProcessRestaurantOrderPaymentResultDto
+            {
+                IsSuccess = false,
+                SaleCen = null,
+                SaleId = null,
+                InventoryDocumentCen = null,
+                Subtotal = totals.Subtotal,
+                TaxAmount = totals.TaxAmount,
+                Total = totals.Total,
+                Message = ex.Message,
+                Insufficiencies = new List<StockInsufficiencyResponseDto>()
+            };
+
+            return Conflict(response);
+        }
+    }
 
     [HttpPost("{ticketCen}/cancel")]
     public async Task<IActionResult> CancelTicket(string companyCen, string ticketCen, [FromBody] CancelTicketContractRequest? request = null) =>
         Ok(await _ticketService.CancelTicketAsync(companyCen, ticketCen, request));
 
-    [HttpPost("{ticketCen}/print")]
+    [HttpGet("{ticketCen}/print")]
     public async Task<IActionResult> PrintTicket(string companyCen, string ticketCen)
     {
-        await _ticketService.PrintTicketAsync(companyCen, ticketCen);
-        return Ok(new { message = "Ticket enviado a impresión exitosamente." });
+        return await _ticketService.PrintTicketAsync(companyCen, ticketCen);
     }
 
     // ── ITEMS ───────────────────────────────────────
@@ -71,7 +102,7 @@ public class TicketController : ControllerBase
         Ok(await _ticketService.GetTicketItemsAsync(companyCen, ticketCen));
 
     [HttpPost("{ticketCen}/items")]
-    public async Task<IActionResult> AddTicketItem(string companyCen, string ticketCen, [FromBody] AddTicketItemContractRequest request) =>
+    public async Task<IActionResult> AddTicketItem(string companyCen, string ticketCen, [FromBody] CreateTicketItemContractRequest request) =>
         Ok(await _ticketService.AddItemAsync(companyCen, ticketCen, request));
 
     [HttpPatch("{ticketCen}/items/{ticketItemCen}")]
