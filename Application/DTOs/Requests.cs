@@ -3,33 +3,25 @@ using System.Text.Json.Serialization;
 
 namespace Sales.API.Application.DTOs;
 
-// ── TICKETS ─────────────────────────────────
 public class CreateTicketContractRequest
 {
-    public string? WaiterCen { get; set; }      // VendorId lookup by code
-    public string? ServiceType { get; set; } = "DINE_IN";
-    public string? TableCode { get; set; }
-    public string? Notes { get; set; }
+    public string? WaiterCen { get; set; }
 }
 
-public class AddTicketItemContractRequest
+public class CreateTicketItemContractRequest
 {
     [Required] public string ProductCen { get; set; } = string.Empty;
-    [Required, Range(0.001, double.MaxValue)] public decimal Quantity { get; set; } = 1;
-
-    [JsonPropertyName("note")]
-    public string? Notes { get; set; }
+    [Required, Range(1, int.MaxValue)] public int Quantity { get; set; } = 1;
+    public string? Note { get; set; }
 }
 
 public class UpdateTicketItemContractRequest
 {
-    public decimal? Quantity { get; set; }
-
-    [JsonPropertyName("note")]
-    public string? Notes { get; set; }
+    public int? Quantity { get; set; }
+    public string? Note { get; set; }
 }
 
-public class AssignWaiterContractRequest
+public class AssignTicketWaiterContractRequest
 {
     [Required] public string WaiterCen { get; set; } = string.Empty;
 }
@@ -41,24 +33,23 @@ public class CancelTicketContractRequest
 
 public class PayTicketContractRequest
 {
-    [Required] public string PaymentMethodCen { get; set; } = string.Empty;
-    public decimal? Amount { get; set; }
-    public string? Reference { get; set; }
-    public string? PaidBy { get; set; }
+    [Required] public string PaymentMethodCode { get; set; } = string.Empty;
 }
 
-// ── KDS ──────────────────────────────────────
+public class ProductLookupContractRequest
+{
+    [Required]
+    public List<string> ProductCens { get; set; } = new();
+}
+
 public class UpdateKdsItemStatusContractRequest
 {
-    /// <summary>preparing | delivered | canceled</summary>
     [Required] public string Status { get; set; } = string.Empty;
 }
 
-// ── TAX CONFIGURATION ────────────────────────
 public class UpdateTaxConfigurationContractRequest
 {
     [Required, Range(0, 100)]
-    [JsonPropertyName("globalTaxPercentage")]
     public decimal GlobalTaxPercentage { get; set; }
 }
 
