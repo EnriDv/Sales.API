@@ -6,7 +6,7 @@
 - **Pareja asignada para el sábado:** Rafael Andres Vargas
 - **Repositorio de Inventario:** [[link](https://github.com/EnriDv/Inventario.API)] 
 - **Repositorio de Ventas:** [[link](https://github.com/EnriDv/Sales.API)] (este mismo)
-- **Contrato API acordado en grupo:** [link al archivo contrato-api.yaml en este repo]
+- **Contrato API acordado en grupo:** [link al archivo contrato-api.yaml en este repo][(https://github.com/EnriDv/Sales.API/blob/main/contratos/contrato-api.yaml)]
 - **URL del Swagger autogenerado** (cuando levantás el backend localmente): http://localhost:5068/swagger
 
 ## Sección 2 — Decisiones técnicas con snippets
