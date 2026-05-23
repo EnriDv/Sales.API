@@ -1,7 +1,6 @@
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
-using Sales.API.Domain.Entities;
-using Shared.Core.Exceptions;
+using Shared.Core.Cen;
 
 namespace Sales.API.Application.Services;
 
@@ -11,57 +10,47 @@ public class TaxConfigurationService : ITaxConfigurationService
 
     public TaxConfigurationService(IUnitOfWork uow) => _uow = uow;
 
-    private async Task<int> ResolveCompanyIdAsync(string companyCen)
-    {
-        if (!int.TryParse(companyCen, out var id))
-            throw new ValidationException($"CEN de empresa inválido: {companyCen}");
-        var company = await _uow.Companies.GetByIdAsync(id);
-        if (company == null)
-            throw new NotFoundException($"Empresa no encontrada: {companyCen}");
-        return id;
-    }
-
     public async Task<TaxConfigurationContractResponse> GetTaxConfigurationAsync(string companyCen)
     {
-        var companyId = await ResolveCompanyIdAsync(companyCen);
-        var settings = await _uow.SalesSettings.GetAllAsync(s => s.CompanyId == companyId);
-        var setting = settings.FirstOrDefault();
+        var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
+        var config = (await _uow.TaxConfigurations.GetAllAsync(t => t.CompanyId == companyId)).FirstOrDefault();
 
         return new TaxConfigurationContractResponse
         {
             CompanyCen = companyCen,
-            GlobalTaxPercentage = setting?.TaxRate ?? 0
+            GlobalTaxPercentage = config?.GlobalTaxPercentage ?? 0m
         };
     }
 
     public async Task<TaxConfigurationContractResponse> UpdateTaxConfigurationAsync(string companyCen, UpdateTaxConfigurationContractRequest request)
     {
-        var companyId = await ResolveCompanyIdAsync(companyCen);
-        var settings = await _uow.SalesSettings.GetAllAsync(s => s.CompanyId == companyId);
-        var setting = settings.FirstOrDefault();
+        var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
+        var config = (await _uow.TaxConfigurations.GetAllAsync(t => t.CompanyId == companyId)).FirstOrDefault();
 
-        if (setting == null)
+        if (config == null)
         {
-            setting = new SalesSetting
+            var cen = CenParser.ParseRequired(companyCen, "empresa");
+            config = new Domain.Entities.TaxConfiguration
             {
                 CompanyId = companyId,
-                TaxRate = request.GlobalTaxPercentage,
-                PaymentMethods = "CASH,QR,CARD",
-                Active = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CompanyCen = cen,
+                GlobalTaxPercentage = request.GlobalTaxPercentage,
+                CreatedAt = DateTime.UtcNow
             };
-            await _uow.SalesSettings.AddAsync(setting);
+            await _uow.TaxConfigurations.AddAsync(config);
         }
         else
         {
-            setting.TaxRate = request.GlobalTaxPercentage;
-            setting.UpdatedAt = DateTime.UtcNow;
-            _uow.SalesSettings.Update(setting);
+            config.GlobalTaxPercentage = request.GlobalTaxPercentage;
+            _uow.TaxConfigurations.Update(config);
         }
 
         await _uow.SaveAsync();
 
-        return await GetTaxConfigurationAsync(companyCen);
+        return new TaxConfigurationContractResponse
+        {
+            CompanyCen = companyCen,
+            GlobalTaxPercentage = config.GlobalTaxPercentage
+        };
     }
 }

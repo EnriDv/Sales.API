@@ -1,82 +1,91 @@
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
-using Shared.Core.Exceptions;
+using Shared.Core.Cen;
+using Microsoft.EntityFrameworkCore;
 
 namespace Sales.API.Application.Services;
 
 public class SalesDashboardService : ISalesDashboardService
 {
     private readonly IUnitOfWork _uow;
+    private readonly IInventoryApiClient _inventoryApiClient;
 
-    public SalesDashboardService(IUnitOfWork uow) => _uow = uow;
-
-    private async Task<int> ResolveCompanyIdAsync(string companyCen)
+    public SalesDashboardService(IUnitOfWork uow, IInventoryApiClient inventoryApiClient)
     {
-        if (!int.TryParse(companyCen, out var id))
-            throw new ValidationException($"CEN de empresa inválido: {companyCen}");
-        var company = await _uow.Companies.GetByIdAsync(id);
-        if (company == null)
-            throw new NotFoundException($"Empresa no encontrada: {companyCen}");
-        return id;
+        _uow = uow;
+        _inventoryApiClient = inventoryApiClient;
     }
 
-    public async Task<DailySalesDashboardContractDto> GetDailySalesAsync(string companyCen, DateTime? date = null)
+    public async Task<DailySalesDashboardDto> GetDailySalesAsync(string companyCen, DateTime? date = null)
     {
-        var companyId = await ResolveCompanyIdAsync(companyCen);
+        var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
         var targetDate = date?.Date ?? DateTime.UtcNow.Date;
 
-        var tickets = await _uow.Tickets.GetAllAsync(
-            t => t.CompanyId == companyId && t.CreatedAt >= targetDate && t.CreatedAt < targetDate.AddDays(1)
+        var sales = await _uow.Sales.GetAllAsync(
+            s => s.CompanyId == companyId && s.CreatedAt >= targetDate && s.CreatedAt < targetDate.AddDays(1)
         );
 
-        var paidTickets = tickets.Where(t => t.Status == "PAID").ToList();
-
-        return new DailySalesDashboardContractDto
+        return new DailySalesDashboardDto
         {
-            Date = targetDate,
-            TotalSales = paidTickets.Sum(t => t.TotalAmount),
-            TicketsCount = tickets.Count(),
-            AverageTicket = paidTickets.Any() ? paidTickets.Average(t => t.TotalAmount) : 0
+            TotalSales = sales.Sum(s => s.SubtotalPrice + s.TaxPrice),
+            TicketsCount = sales.Count(),
+            AverageTicket = sales.Any() ? sales.Average(s => s.SubtotalPrice + s.TaxPrice) : 0
         };
     }
 
-    public async Task<List<TopProductDashboardContractDto>> GetTopProductsAsync(string companyCen, int topN = 10)
+    public async Task<List<TopProductDashboardContractResponse>> GetTopProductsAsync(string companyCen, int topN = 10)
     {
-        var companyId = await ResolveCompanyIdAsync(companyCen);
-        var tickets = await _uow.Tickets.GetAllAsync(t => t.CompanyId == companyId && t.Status == "PAID", "Items.Product");
+        var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
+        var sales = await _uow.Sales.GetAllAsync(s => s.CompanyId == companyId, "SaleDetails");
+        var productCens = sales
+            .SelectMany(s => s.SaleDetails)
+            .Select(i => CenParser.Format(i.ProductCen))
+            .Where(cen => !string.IsNullOrWhiteSpace(cen))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var productLookupMap = await _inventoryApiClient.GetProductLookupMapAsync(companyCen, productCens);
         
-        var topProducts = tickets
-            .SelectMany(t => t.Items)
-            .Where(i => i.Status != "CANCELLED")
-            .GroupBy(i => new { i.Product?.Code, i.Product?.Name })
-            .Select(g => new TopProductDashboardContractDto
+        var topProducts = sales
+            .SelectMany(s => s.SaleDetails)
+            .GroupBy(i => i.ProductCen)
+            .Select(g => new TopProductDashboardContractResponse
             {
-                ProductCen = g.Key.Code ?? string.Empty,
-                ProductName = g.Key.Name ?? string.Empty,
+                ProductCen = CenParser.Format(g.Key),
+                ProductName = productLookupMap.TryGetValue(CenParser.Format(g.Key), out var product)
+                    ? product.Name
+                    : $"Producto no encontrado ({CenParser.Format(g.Key)})",
                 TotalQuantity = g.Sum(i => i.Quantity),
-                TotalRevenue = g.Sum(i => i.Subtotal > 0 ? i.Subtotal : i.UnitPrice * i.Quantity),
-                OrderCount = g.Count()
+                CategoryCen = productLookupMap.TryGetValue(CenParser.Format(g.Key), out var matchedProductCategory)
+                    ? matchedProductCategory.CategoryCen
+                    : null,
+                CategoryName = productLookupMap.TryGetValue(CenParser.Format(g.Key), out var matchedProductCategoryName)
+                    ? matchedProductCategoryName.CategoryName
+                    : null,
+                SalePrice = productLookupMap.TryGetValue(CenParser.Format(g.Key), out var matchedProduct)
+                    ? matchedProduct.SalePrice
+                    : g.First().Price
             })
-            .OrderByDescending(p => p.TotalRevenue)
+            .OrderByDescending(p => p.TotalQuantity) // by quantity or revenue
             .Take(topN)
             .ToList();
 
         return topProducts;
     }
 
-    public async Task<KdsDashboardStatusContractDto> GetKdsStatusAsync(string companyCen)
+    public async Task<KdsStatusDashboardDto> GetKdsStatusAsync(string companyCen)
     {
-        var companyId = await ResolveCompanyIdAsync(companyCen);
-        // Only active tickets
-        var tickets = await _uow.Tickets.GetAllAsync(t => t.CompanyId == companyId && t.Status == "OPEN", "Items");
-        var items = tickets.SelectMany(t => t.Items).ToList();
+        var companyId = await SalesCenResolver.ResolveCompanyIdAsync(_uow, companyCen);
+        // Only active items from RestaurantOrderDetails
+        var items = await _uow.RestaurantOrderDetails.GetAllAsync(
+            i => i.RestaurantOrder.Order.CompanyId == companyId && i.RestaurantOrder.Order.OrderStatusId != 4, // 4 = closed/paid?
+            "RestaurantOrderDetailStatus,RestaurantOrder.Order");
 
-        return new KdsDashboardStatusContractDto
+        return new KdsStatusDashboardDto
         {
-            Pending = items.Count(i => i.Status == "PENDING"),
-            Preparing = items.Count(i => i.Status == "IN_COMMAND"),
-            Delivered = items.Count(i => i.Status == "SERVED"),
-            Total = items.Count(i => i.Status != "CANCELLED")
+            PendingCount = items.Count(i => i.RestaurantOrderDetailStatusId == 1), // Assuming 1 = Pending
+            PreparingCount = items.Count(i => i.RestaurantOrderDetailStatusId == 2), // Assuming 2 = Preparing
+            ReadyCount = items.Count(i => i.RestaurantOrderDetailStatusId == 3) // Assuming 3 = Ready
         };
     }
 }
