@@ -1,4 +1,4 @@
-# Sales.API — README
+# Sales.API
 
 ## Configuración
 - Archivo: `appsettings.json`
