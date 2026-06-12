@@ -5,6 +5,7 @@ using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
 using Shared.Core.Cen;
 using Shared.Core.Exceptions;
+using Polly;
 
 namespace Sales.API.Application.Services;
 
@@ -13,6 +14,65 @@ public class InventoryApiClient : IInventoryApiClient
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _httpClient;
     private readonly IUnitOfWork _uow;
+
+    private static readonly IAsyncPolicy<List<SellableProductContractDto>> SellableProductsPolicy;
+    private static readonly IAsyncPolicy<Dictionary<string, ProductLookupContractDto>> ProductLookupPolicy;
+    private static readonly IAsyncPolicy ConsumeStockPolicy;
+
+    static InventoryApiClient()
+    {
+        var retryPolicy = Policy
+            .Handle<HttpRequestException>()
+            .Or<TaskCanceledException>()
+            .WaitAndRetryAsync(
+                retryCount: 3,
+                sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))
+            );
+
+        var circuitBreaker = Policy
+            .Handle<HttpRequestException>()
+            .Or<TaskCanceledException>()
+            .CircuitBreakerAsync(
+                exceptionsAllowedBeforeBreaking: 5,
+                durationOfBreak: TimeSpan.FromSeconds(30)
+            );
+
+        var fallbackSellableProducts = Policy<List<SellableProductContractDto>>
+            .Handle<HttpRequestException>()
+            .Or<TaskCanceledException>()
+            .Or<Polly.CircuitBreaker.BrokenCircuitException>()
+            .FallbackAsync((cancellationToken) => Task.FromException<List<SellableProductContractDto>>(new ConflictException("Inventario no disponible temporalmente")));
+
+        SellableProductsPolicy = Policy.WrapAsync<List<SellableProductContractDto>>(
+            fallbackSellableProducts,
+            retryPolicy.AsAsyncPolicy<List<SellableProductContractDto>>(),
+            circuitBreaker.AsAsyncPolicy<List<SellableProductContractDto>>()
+        );
+
+        var fallbackProductLookup = Policy<Dictionary<string, ProductLookupContractDto>>
+            .Handle<HttpRequestException>()
+            .Or<TaskCanceledException>()
+            .Or<Polly.CircuitBreaker.BrokenCircuitException>()
+            .FallbackAsync((cancellationToken) => Task.FromException<Dictionary<string, ProductLookupContractDto>>(new ConflictException("Inventario no disponible temporalmente")));
+
+        ProductLookupPolicy = Policy.WrapAsync<Dictionary<string, ProductLookupContractDto>>(
+            fallbackProductLookup,
+            retryPolicy.AsAsyncPolicy<Dictionary<string, ProductLookupContractDto>>(),
+            circuitBreaker.AsAsyncPolicy<Dictionary<string, ProductLookupContractDto>>()
+        );
+
+        var fallbackConsumeStock = Policy
+            .Handle<HttpRequestException>()
+            .Or<TaskCanceledException>()
+            .Or<Polly.CircuitBreaker.BrokenCircuitException>()
+            .FallbackAsync((cancellationToken) => Task.FromException(new ConflictException("Inventario no disponible temporalmente")));
+
+        ConsumeStockPolicy = Policy.WrapAsync(
+            fallbackConsumeStock,
+            retryPolicy,
+            circuitBreaker
+        );
+    }
 
     public InventoryApiClient(HttpClient httpClient, IUnitOfWork uow)
     {
@@ -29,62 +89,68 @@ public class InventoryApiClient : IInventoryApiClient
         int page = 1,
         int pageSize = 50)
     {
-        var effectiveWarehouseCen = await ResolveWarehouseCenAsync(companyCen, warehouseCen);
-        var requestPath = BuildSellableProductsPath(companyCen, search, categoryCen, effectiveWarehouseCen, onlyAvailable);
-        using var response = await _httpClient.GetAsync(requestPath);
-
-        if (!response.IsSuccessStatusCode)
+        return await SellableProductsPolicy.ExecuteAsync(async () =>
         {
-            await ThrowUpstreamExceptionAsync(response, "fetching sellable products");
-        }
+            var effectiveWarehouseCen = await ResolveWarehouseCenAsync(companyCen, warehouseCen);
+            var requestPath = BuildSellableProductsPath(companyCen, search, categoryCen, effectiveWarehouseCen, onlyAvailable);
+            using var response = await _httpClient.GetAsync(requestPath);
 
-        var products = await response.Content.ReadFromJsonAsync<List<SellableProductContractDto>>(JsonOptions)
-                       ?? new List<SellableProductContractDto>();
+            if (!response.IsSuccessStatusCode)
+            {
+                await ThrowUpstreamExceptionAsync(response, "fetching sellable products");
+            }
 
-        var normalizedPage = page < 1 ? 1 : page;
-        var normalizedPageSize = pageSize < 1 ? 50 : pageSize;
+            var products = await response.Content.ReadFromJsonAsync<List<SellableProductContractDto>>(JsonOptions)
+                           ?? new List<SellableProductContractDto>();
 
-        return products
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
-            .ToList();
+            var normalizedPage = page < 1 ? 1 : page;
+            var normalizedPageSize = pageSize < 1 ? 50 : pageSize;
+
+            return products
+                .Skip((normalizedPage - 1) * normalizedPageSize)
+                .Take(normalizedPageSize)
+                .ToList();
+        });
     }
 
     public async Task<Dictionary<string, ProductLookupContractDto>> GetProductLookupMapAsync(string companyCen, IEnumerable<string> productCens)
     {
-        var cens = productCens
-            .Where(cen => !string.IsNullOrWhiteSpace(cen))
-            .Select(cen => cen.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (cens.Count == 0)
+        return await ProductLookupPolicy.ExecuteAsync(async () =>
         {
-            return new Dictionary<string, ProductLookupContractDto>(StringComparer.OrdinalIgnoreCase);
-        }
+            var cens = productCens
+                .Where(cen => !string.IsNullOrWhiteSpace(cen))
+                .Select(cen => cen.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-        var request = new ProductLookupContractRequest { ProductCens = cens };
-        var path = BuildProductLookupPath(companyCen);
+            if (cens.Count == 0)
+            {
+                return new Dictionary<string, ProductLookupContractDto>(StringComparer.OrdinalIgnoreCase);
+            }
 
-        Console.WriteLine($"Inventory lookup request (company={companyCen}) -> {cens.Count} cens: {string.Join(',', cens)}");
+            var request = new ProductLookupContractRequest { ProductCens = cens };
+            var path = BuildProductLookupPath(companyCen);
 
-        using var response = await _httpClient.PostAsJsonAsync(path, request, JsonOptions);
+            Console.WriteLine($"Inventory lookup request (company={companyCen}) -> {cens.Count} cens: {string.Join(',', cens)}");
 
-        if (!response.IsSuccessStatusCode)
-        {
-            await ThrowUpstreamExceptionAsync(response, "looking up products");
-        }
+            using var response = await _httpClient.PostAsJsonAsync(path, request, JsonOptions);
 
-        var responseBody = await response.Content.ReadAsStringAsync();
-        Console.WriteLine($"Inventory lookup response body: {responseBody}");
+            if (!response.IsSuccessStatusCode)
+            {
+                await ThrowUpstreamExceptionAsync(response, "looking up products");
+            }
 
-        var products = System.Text.Json.JsonSerializer.Deserialize<List<ProductLookupContractDto>>(responseBody, JsonOptions)
-                       ?? new List<ProductLookupContractDto>();
+            var responseBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"Inventory lookup response body: {responseBody}");
 
-        return products
-            .Where(product => !string.IsNullOrWhiteSpace(product.ProductCen))
-            .GroupBy(product => product.ProductCen, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            var products = System.Text.Json.JsonSerializer.Deserialize<List<ProductLookupContractDto>>(responseBody, JsonOptions)
+                           ?? new List<ProductLookupContractDto>();
+
+            return products
+                .Where(product => !string.IsNullOrWhiteSpace(product.ProductCen))
+                .GroupBy(product => product.ProductCen, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        });
     }
 
     private static string BuildSellableProductsPath(
@@ -173,13 +239,16 @@ public class InventoryApiClient : IInventoryApiClient
 
     public async Task ConsumeStockAsync(string companyCen, ConsumeStockContractRequest request)
     {
-        var path = $"api/inventory/companies/{Uri.EscapeDataString(companyCen)}/stock/consume";
-        using var response = await _httpClient.PostAsJsonAsync(path, request, JsonOptions);
-
-        if (!response.IsSuccessStatusCode)
+        await ConsumeStockPolicy.ExecuteAsync(async () =>
         {
-            await ThrowUpstreamExceptionAsync(response, "consuming stock");
-        }
+            var path = $"api/inventory/companies/{Uri.EscapeDataString(companyCen)}/stock/consume";
+            using var response = await _httpClient.PostAsJsonAsync(path, request, JsonOptions);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                await ThrowUpstreamExceptionAsync(response, "consuming stock");
+            }
+        });
     }
 
     private static string ExtractUpstreamMessage(string errorBody, HttpStatusCode statusCode, string operation)
