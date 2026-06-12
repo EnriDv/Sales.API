@@ -3,8 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
-using Shared.Core.Cen;
-using Shared.Core.Exceptions;
+using Sales.API.Shared.Cen;
+using Sales.API.Shared.Exceptions;
 using Polly;
 
 namespace Sales.API.Application.Services;

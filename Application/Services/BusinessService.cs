@@ -1,6 +1,6 @@
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
-using Shared.Core.Exceptions;
+using Sales.API.Shared.Exceptions;
 
 namespace Sales.API.Application.Services;
 

@@ -6,7 +6,7 @@ using Sales.API.Infrastructure.Persistence;
 using Sales.API.Infrastructure.Middleware;
 using Sales.API.Infrastructure.Repositories;
 using Scalar.AspNetCore;
-using Shared.Core.Middleware;
+using Sales.API.Shared.Middleware;
 
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 

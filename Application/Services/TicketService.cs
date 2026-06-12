@@ -1,8 +1,8 @@
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
 using Sales.API.Domain.Entities;
-using Shared.Core.Cen;
-using Shared.Core.Exceptions;
+using Sales.API.Shared.Cen;
+using Sales.API.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
@@ -343,12 +343,12 @@ public class TicketService : ITicketService
                 Total = amounts.TotalAmount
             };
         }
-        catch (Shared.Core.Exceptions.ConflictException)
+        catch (ConflictException)
         {
             await tx.RollbackAsync();
             throw;
         }
-        catch (Shared.Core.Exceptions.ValidationException)
+        catch (ValidationException)
         {
             await tx.RollbackAsync();
             throw;

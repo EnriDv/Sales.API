@@ -1,7 +1,7 @@
 using Sales.API.Application.Interfaces;
 using Sales.API.Domain.Entities;
-using Shared.Core.Cen;
-using Shared.Core.Exceptions;
+using Sales.API.Shared.Cen;
+using Sales.API.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Sales.API.Application;

@@ -1,6 +1,6 @@
 using Sales.API.Application.DTOs;
 using Sales.API.Application.Interfaces;
-using Shared.Core.Cen;
+using Sales.API.Shared.Cen;
 using Microsoft.EntityFrameworkCore;
 
 namespace Sales.API.Application.Services;
