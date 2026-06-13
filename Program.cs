@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
 using Sales.API.Application.Interfaces;
 using Sales.API.Application.Services;
 using Sales.API.Application.Extensions;
-using Sales.API.Infrastructure.Persistence;
 using Sales.API.Infrastructure.Middleware;
 using Sales.API.Infrastructure.Repositories;
 using Scalar.AspNetCore;
