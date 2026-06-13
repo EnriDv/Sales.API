@@ -55,14 +55,13 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseSimpleIdempotency();
 
 
-    app.MapOpenApi();
-    app.MapScalarApiReference(options =>
-    {
-        options.WithTitle("Sales API - ISW-312")
-               .WithTheme(ScalarTheme.BluePlanet)
-               .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
-    });
-
+app.MapOpenApi();
+app.MapScalarApiReference(options =>
+{
+    options.WithTitle("Sales API - ISW-312")
+            .WithTheme(ScalarTheme.BluePlanet)
+            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
+});
 
 
 
