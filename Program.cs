@@ -54,8 +54,7 @@ app.UseForwardedHeaders();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseSimpleIdempotency();
 
-if (app.Environment.IsDevelopment())
-{
+
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
     {
@@ -63,7 +62,7 @@ if (app.Environment.IsDevelopment())
                .WithTheme(ScalarTheme.BluePlanet)
                .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
     });
-}
+
 
 
 
