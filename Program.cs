@@ -33,7 +33,12 @@ builder.Services.AddScoped<IPaymentMethodService, PaymentMethodService>();
 builder.Services.AddScoped<IWaiterService, WaiterService>();
 builder.Services.AddInventoryApiClient(builder.Configuration);
 builder.Services.AddScoped<ISalesCatalogService, SalesCatalogService>();
-
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto;
+});
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -44,6 +49,7 @@ builder.Services.AddCors(options =>
     });
 });
 var app = builder.Build();
+app.UseForwardedHeaders();
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 app.UseSimpleIdempotency();
